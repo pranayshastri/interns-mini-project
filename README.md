@@ -35,6 +35,74 @@ All service files have been scaffolded as skeleton files with detailed `// TODO:
 
 ---
 
+## 🛡️ Crucial Concept for Interns: Security Boundary & Internal Masking
+
+> [!IMPORTANT]
+> **Core Architectural Rule:**  
+> The client (browser) must **NEVER have any direct access to or knowledge of** what happens behind the API Gateway.
+
+```text
+ ┌─────────────────────────────────────────────────────────────┐
+ │                      PUBLIC INTERNET                        │
+ │                                                             │
+ │   [ Customer / Shopkeeper Browser ]                         │
+ │                 │                                           │
+ │                 │  1. HTTPS (Port 3000)                     │
+ │                 ▼                                           │
+ │        [ Next.js Frontend ]                                 │
+ │                 │                                           │
+ │                 │  2. GraphQL Queries & Mutations           │
+ │                 │     POST http://localhost:4000/graphql    │
+ │                 ▼                                           │
+ └─────────────────┼───────────────────────────────────────────┘
+═══════════════════╪═════════════════════════════════════════════
+                   │   ZERO-TRUST SECURITY BOUNDARY
+═══════════════════╪═════════════════════════════════════════════
+ ┌─────────────────┼───────────────────────────────────────────┐
+ │                 ▼           PRIVATE DOCKER NETWORK          │
+ │       [ NestJS API Gateway ]                                │
+ │          (Port 4000)                                        │
+ │           • JWT Claims Extraction & Valkey Session Guard    │
+ │           • Translates GraphQL ──► gRPC                     │
+ │           • Holds api-gateway.crt + api-gateway.key         │
+ │                 │                                           │
+ │                 │  3. Strictly Internal gRPC over mTLS      │
+ │                 │     (Signed by internal Root CA)          │
+ │         ┌───────┼───────────────┬──────────────┐            │
+ │         ▼       ▼               ▼              ▼            │
+ │     [ Auth ] [ Catalog ]    [ Order ]     [ Inventory ]     │
+ │     :50051   :50052         :50053        :50054            │
+ │        │        │               │              │            │
+ │        ▼        ▼               ▼              ▼            │
+ │     auth_db  catalog_db      order_db     inventory_db      │
+ │                                 │                           │
+ │                                 │ 4. Kafka KRaft            │
+ │                                 ▼                           │
+ │                           [ Apache Kafka ]                  │
+ └─────────────────────────────────────────────────────────────┘
+```
+
+### 🔑 4 Pillars Every Intern Must Implement Correctly:
+
+1. **Complete Internal Topology Hiding (Encapsulation):**
+   - The client/browser **only ever knows two endpoints**:
+     - Next.js Web App: `http://localhost:3000`
+     - GraphQL API Gateway: `http://localhost:4000/graphql`
+   - The client must have **zero awareness** of internal gRPC ports (`:50051`–`:50054`), internal service names, database instances (`auth_db`, `order_db`), or Apache Kafka topics.
+
+2. **GraphQL Data Stitching (BFF Pattern):**
+   - When a frontend queries a product, the API Gateway queries `catalog-service` for details and `inventory-service` for real-time stock over internal gRPC, merges them together, and returns a single unified GraphQL payload. The client does not know multiple services were consulted.
+
+3. **Zero-Trust Mutual TLS (mTLS):**
+   - Even inside the private network, services **never trust callers blindly**.
+   - Every internal microservice enforces `RequireAndVerifyClientCert`.
+   - If an unauthorized caller or external attacker attempts to send gRPC requests without a client certificate signed by the internal Root CA, the handshake aborts immediately (**gRPC Status Code 14 - `UNAVAILABLE`**).
+
+4. **Single Ingress Point for Edge Security:**
+   - JWT validation, Valkey session tracking, rate limiting, and CORS are enforced at the API Gateway before any internal microservice is invoked.
+
+---
+
 ## 📂 Repository Structure
 
 ```text
