@@ -6,6 +6,15 @@ All service files have been scaffolded as skeleton files with detailed `// TODO:
 
 ---
 
+## 👥 Team Leadership & Git Policy
+- **Project Owner:** Pranay Shastri ([@pranayshastri](https://github.com/pranayshastri))
+- **Team Leader:** Ankit Prajapati ([@Ankitprajapati24](https://github.com/Ankitprajapati24))
+
+> [!IMPORTANT]
+> The `main` branch is protected. Only Project Owner **Pranay Shastri** and Team Leader **Ankit Prajapati** have merge/push authority into `main`. All other collaborators and interns must create feature branches (`feat/...`) and open a Pull Request. See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed workflow instructions.
+
+---
+
 ## 🏗️ High-Level Architecture
 
 ```text
