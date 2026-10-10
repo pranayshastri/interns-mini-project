@@ -116,3 +116,47 @@ Refer to `ARCHITECTURE.md` for in-depth specifications and the 4 demonstration l
    - In `apps/order-service/src/outbox/outbox-poller.worker.ts`: poll pending events with `SELECT ... FOR UPDATE SKIP LOCKED` and publish to Kafka topic `shop.orders.v1`.
 5. **Pillar 2: Idempotent Consumer (Inventory Service):**
    - In `apps/inventory-service/src/kafka/order-consumer.service.ts`: deduplicate incoming order events via `inbox_events` (`ON CONFLICT DO NOTHING`) to safely prevent double stock deductions.
+
+---
+
+## 🧩 Team Expansion: Designing & Adding Missing Services & Frontends
+
+> [!TIP]
+> **To All Collaborators & Interns:**  
+> The 5 services scaffolded above represent the **foundational transactional backbone** of the platform. However, a production-grade distributed e-commerce system is composed of many other critical capabilities.
+> 
+> **You and your team are empowered to decide what additional services and frontend applications are missing and build them!**
+
+### 💡 Ideas for Missing Services & Apps You Can Add:
+
+1. **Dedicated Frontends (`apps/admin-frontend`, `apps/shopkeeper-portal`)**:
+   - A dedicated Next.js Admin Dashboard for platform management, user ban/unban, order metrics, and real-time Kafka event visualizers.
+   - A dedicated Merchant Portal for shop owners to manage products, view stock alerts, and track order fulfillment.
+
+2. **Notification Service (`apps/notification-service`)**:
+   - A NestJS microservice listening to Kafka topic `shop.orders.v1`.
+   - Sends simulated email, SMS, or webhooks whenever an order is placed, confirmed, or cancelled.
+
+3. **Payment Service (`apps/payment-service`)**:
+   - Manages customer payment methods, charges, ledger entries, and payment status updates.
+   - Publishes `PaymentCompleted` or `PaymentFailed` events to Kafka to orchestrate order confirmation.
+
+4. **Shipping & Fulfillment Service (`apps/shipping-service`)**:
+   - Generates tracking numbers, calculates shipping estimates, and manages dispatch statuses.
+
+5. **Review & Rating Service (`apps/review-service`)**:
+   - Allows customers to post verified product reviews, star ratings, and seller feedback.
+
+6. **Search & Recommendation Service (`apps/search-service`)**:
+   - Full-text search and caching for high-volume product discovery.
+
+### 🛠️ How to Add a New Project to the Monorepo:
+1. Create your new app folder inside `apps/<your-project-name>`:
+   - For a backend service: Scaffold a NestJS project (`package.json`, `tsconfig.json`, `src/`).
+   - For a frontend app: Scaffold a Next.js project.
+2. Link shared workspace packages in its `package.json` (e.g. `"@repo/proto": "*"`, `"@repo/typescript-config": "*"`).
+3. If the service needs a database or Kafka events:
+   - Follow the **Database-per-Service** pattern with a dedicated Prisma schema (`prisma/schema.prisma`).
+   - Define contracts in `packages/proto/` if communicating over gRPC.
+   - Add the service to `docker-compose.yml`.
+4. Always develop on a feature branch (`feat/<service-name>`) and open a Pull Request for Team Lead / Owner review!
