@@ -1,5 +1,10 @@
--- Seed 3 Users in auth_db (Password: 'Password123' hashed with bcrypt)
-\c auth_db;
+-- =========================================================================
+-- INDUSTRY-GRADE MULTI-SERVICE DATABASE SCHEMA INITIALIZATION & SEEDS
+-- =========================================================================
+
+-- 1. AUTH SERVICE DATABASE
+\c ecommerce_auth_db;
+
 CREATE TABLE IF NOT EXISTS users (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     email VARCHAR(255) UNIQUE NOT NULL,
@@ -9,14 +14,16 @@ CREATE TABLE IF NOT EXISTS users (
     shop_id UUID NULL
 );
 
+-- Seed 3 Users in ecommerce_auth_db (Password: 'Password123' hashed with bcrypt)
 INSERT INTO users (id, email, password_hash, role, full_name, shop_id) VALUES
 ('a0000000-0000-0000-0000-000000000001', 'admin@shopping.com', '$2a$10$7EqJtq98hPqEX7fNZaFWoO.eR8M1gN7aU5F3aHkP4.N4/M.b/Vn1y', 'ADMIN', 'Platform Admin', NULL),
 ('b0000000-0000-0000-0000-000000000002', 'shopkeeper@gadgets.com', '$2a$10$7EqJtq98hPqEX7fNZaFWoO.eR8M1gN7aU5F3aHkP4.N4/M.b/Vn1y', 'SHOPKEEPER', 'John Merchant', 's0000000-0000-0000-0000-000000000001'),
 ('c0000000-0000-0000-0000-000000000003', 'customer@gmail.com', '$2a$10$7EqJtq98hPqEX7fNZaFWoO.eR8M1gN7aU5F3aHkP4.N4/M.b/Vn1y', 'CUSTOMER', 'Alice Consumer', NULL)
 ON CONFLICT (email) DO NOTHING;
 
--- Seed Initial Product in catalog_db
-\c catalog_db;
+-- 2. CATALOG SERVICE DATABASE
+\c ecommerce_catalog_db;
+
 CREATE TABLE IF NOT EXISTS products (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     shop_id UUID NOT NULL,
@@ -30,8 +37,9 @@ INSERT INTO products (id, shop_id, name, description, price_cents) VALUES
 ('p0000000-0000-0000-0000-000000000001', 's0000000-0000-0000-0000-000000000001', 'Mechanical Keyboard', 'RGB Hot-swappable Mechanical Keyboard', 8900)
 ON CONFLICT (id) DO NOTHING;
 
--- Seed Initial Inventory in inventory_db
-\c inventory_db;
+-- 3. INVENTORY SERVICE DATABASE
+\c ecommerce_inventory_db;
+
 CREATE TABLE IF NOT EXISTS product_inventory (
     product_id UUID PRIMARY KEY,
     available_stock INT NOT NULL CHECK (available_stock >= 0),
@@ -48,8 +56,9 @@ INSERT INTO product_inventory (product_id, available_stock) VALUES
 ('p0000000-0000-0000-0000-000000000001', 50)
 ON CONFLICT (product_id) DO NOTHING;
 
--- Tables for order_db
-\c order_db;
+-- 4. ORDER SERVICE DATABASE (Transactional Outbox Pattern)
+\c ecommerce_order_db;
+
 CREATE TABLE IF NOT EXISTS orders (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     customer_id UUID NOT NULL,

@@ -1,8 +1,8 @@
-// Prisma Schema for Auth Service (Database: auth_db)
+// Prisma Schema for Auth Service (Database: ecommerce_auth_db)
 // 
 // ARCHITECTURE NOTE:
 // Database-per-service pattern (ARCHITECTURE.md Section 7.1).
-// Connects to PostgreSQL database: auth_db.
+// Connects to PostgreSQL database: ecommerce_auth_db.
 // 
 // TODO: [Intern Task - Database Models]
 // 1. Configure datasource with provider = "postgresql" and env("DATABASE_URL").

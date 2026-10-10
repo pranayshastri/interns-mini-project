@@ -1,8 +1,8 @@
-// Prisma Schema for Catalog Service (Database: catalog_db)
+// Prisma Schema for Catalog Service (Database: ecommerce_catalog_db)
 // 
 // ARCHITECTURE NOTE:
 // Database-per-service pattern (ARCHITECTURE.md Section 7.1).
-// Connects to PostgreSQL database: catalog_db.
+// Connects to PostgreSQL database: ecommerce_catalog_db.
 // 
 // TODO: [Intern Task - Catalog Model]
 // 1. Configure datasource with provider = "postgresql" and env("DATABASE_URL").

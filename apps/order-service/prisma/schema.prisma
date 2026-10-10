@@ -1,8 +1,8 @@
-// Prisma Schema for Order Service (Database: order_db)
+// Prisma Schema for Order Service (Database: ecommerce_order_db)
 // 
 // ARCHITECTURE NOTE:
 // Implements Transactional Outbox Pattern (ARCHITECTURE.md Section 4.3).
-// Connects to PostgreSQL database: order_db.
+// Connects to PostgreSQL database: ecommerce_order_db.
 // 
 // TODO: [Intern Task - Outbox Schema & Models]
 // 1. Configure datasource with provider = "postgresql" and env("DATABASE_URL").

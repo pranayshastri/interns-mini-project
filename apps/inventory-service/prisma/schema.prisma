@@ -1,8 +1,8 @@
-// Prisma Schema for Inventory Service (Database: inventory_db)
+// Prisma Schema for Inventory Service (Database: ecommerce_inventory_db)
 // 
 // ARCHITECTURE NOTE:
 // Implements Idempotent Consumer Pattern (ARCHITECTURE.md Section 4.4).
-// Connects to PostgreSQL database: inventory_db.
+// Connects to PostgreSQL database: ecommerce_inventory_db.
 // 
 // TODO: [Intern Task - Inventory Models]
 // 1. Configure datasource with provider = "postgresql" and env("DATABASE_URL").

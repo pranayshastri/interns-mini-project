@@ -112,7 +112,7 @@ All service files have been scaffolded as skeleton files with detailed `// TODO:
 │   ├── auth-service/         # NestJS gRPC (auth_db, Prisma ORM, bcrypt, JWT, Valkey session)
 │   ├── catalog-service/      # NestJS gRPC (catalog_db, Prisma ORM, Valkey cache)
 │   ├── order-service/        # NestJS gRPC (order_db, Prisma ORM, Transactional Outbox, Kafka Producer)
-│   └── inventory-service/    # NestJS gRPC (inventory_db, Prisma ORM, Idempotent Kafka Consumer)
+│   └── inventory-service/    # NestJS gRPC (ecommerce_inventory_db, Prisma ORM, Idempotent Kafka Consumer)
 ├── packages/
 │   ├── proto/                # Shared Protocol Buffer definitions (auth, catalog, order, inventory)
 │   ├── typescript-config/    # Shared TS configs (including nestjs.json)
@@ -120,11 +120,14 @@ All service files have been scaffolded as skeleton files with detailed `// TODO:
 │   └── ui/                   # Shared React UI components
 ├── infra/
 │   ├── certs/                # Generated mTLS certificates (ca, client, server certs)
-│   └── postgres/             # Multi-DB initialization & seed scripts
+│   ├── postgres/             # PostgreSQL 16 Dockerfile, multi-DB init & seed scripts
+│   ├── kafka/                # Apache Kafka (KRaft mode) Dockerfile & topic auto-provisioner
+│   └── valkey/               # Valkey 8 Dockerfile & production valkey.conf
 ├── scripts/
 │   ├── generate-certs.sh     # Bash script for generating internal Root CA & mTLS certificates
 │   └── generate-certs.ps1    # PowerShell script for generating certificates on Windows
-├── docker-compose.yml        # PostgreSQL 16, Valkey 8, Kafka (KRaft), Kafka UI (:8080)
+├── .env.example              # Environment variables template with industry-grade secrets
+├── docker-compose.yml        # Multi-container orchestration (No hardcoded credentials)
 └── ARCHITECTURE.md           # Comprehensive Technical Architecture & Lab Guide
 ```
 
@@ -132,8 +135,15 @@ All service files have been scaffolded as skeleton files with detailed `// TODO:
 
 ## 🚀 Quickstart Guide
 
-### 1. Generate mTLS Certificates
-Before running the services, generate internal Root CA and service certificates:
+### 1. Configure Environment Variables
+Create your local environment file from the provided template:
+```bash
+cp .env.example .env
+```
+All secrets, ports, and database credentials are fully parameterized in `.env`.
+
+### 2. Generate mTLS Certificates
+Before running the services, generate the internal Root CA and service certificates:
 ```bash
 # On Linux / macOS / Git Bash:
 ./scripts/generate-certs.sh
@@ -142,17 +152,17 @@ Before running the services, generate internal Root CA and service certificates:
 .\scripts\generate-certs.ps1
 ```
 
-### 2. Start Core Infrastructure (Docker Compose)
-Start PostgreSQL, Valkey, Apache Kafka (KRaft mode), and Kafka UI:
+### 3. Start Core Infrastructure (Docker Compose)
+Start PostgreSQL 16, Valkey 8, Apache Kafka (KRaft mode), and Kafka UI:
 ```bash
 docker compose up -d postgres valkey kafka kafka-ui
 ```
-- **PostgreSQL**: Port `5432` (Auto-creates `auth_db`, `catalog_db`, `order_db`, `inventory_db`)
-- **Valkey**: Port `6379`
-- **Kafka (KRaft)**: Port `9092` (internal) / `9094` (host)
-- **Kafka UI**: Open [http://localhost:8080](http://localhost:8080) to inspect topics and consumer offsets
+- **PostgreSQL 16**: Port `5432` (Auto-provisions: `ecommerce_auth_db`, `ecommerce_catalog_db`, `ecommerce_order_db`, `ecommerce_inventory_db`)
+- **Valkey 8**: Port `6379`
+- **Kafka (KRaft)**: Port `9092` (internal) / `9094` (host) with auto-provisioned topic `shop.orders.v1`
+- **Kafka UI**: Open [http://localhost:8080](http://localhost:8080) to inspect clusters and topics
 
-### 3. Generate Prisma Clients
+### 4. Generate Prisma Clients
 For each microservice:
 ```bash
 npm run prisma:generate --workspace=auth-service
@@ -161,7 +171,7 @@ npm run prisma:generate --workspace=order-service
 npm run prisma:generate --workspace=inventory-service
 ```
 
-### 4. Run Development Servers
+### 5. Run Development Servers
 Run all applications with Turborepo:
 ```bash
 npm run dev
