@@ -1,0 +1,35 @@
+// Prisma Schema for Auth Service (Database: auth_db)
+// 
+// ARCHITECTURE NOTE:
+// Database-per-service pattern (ARCHITECTURE.md Section 7.1).
+// Connects to PostgreSQL database: auth_db.
+// 
+// TODO: [Intern Task - Database Models]
+// 1. Configure datasource with provider = "postgresql" and env("DATABASE_URL").
+// 2. Define User model matching auth_db DDL:
+//    - id: UUID @id @default(uuid())
+//    - email: String @unique
+//    - passwordHash: String @map("password_hash")
+//    - role: String (ADMIN | SHOPKEEPER | CUSTOMER)
+//    - fullName: String @map("full_name")
+//    - shopId: String? @map("shop_id")
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String  @id @default(uuid())
+  email        String  @unique
+  passwordHash String  @map("password_hash")
+  role         String  // 'ADMIN', 'SHOPKEEPER', 'CUSTOMER'
+  fullName     String  @map("full_name")
+  shopId       String? @map("shop_id")
+
+  @@map("users")
+}

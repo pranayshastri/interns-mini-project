@@ -1,0 +1,39 @@
+syntax = "proto3";
+package shop.catalog.v1;
+option go_package = "github.com/platform/gen/catalogv1";
+
+service CatalogService {
+  rpc CreateProduct (CreateProductRequest) returns (ProductResponse);
+  rpc ListProducts (ListProductsRequest) returns (ListProductsResponse);
+  rpc GetProduct (GetProductRequest) returns (ProductResponse);
+}
+
+message CreateProductRequest {
+  string shop_id = 1;
+  string name = 2;
+  string description = 3;
+  int64 price_cents = 4;
+  int32 initial_stock = 5;
+}
+
+message ProductResponse {
+  string id = 1;
+  string shop_id = 2;
+  string name = 3;
+  string description = 4;
+  int64 price_cents = 5;
+  int32 available_stock = 6;
+}
+
+message ListProductsRequest {
+  int32 page = 1;
+  int32 limit = 2;
+}
+
+message ListProductsResponse {
+  repeated ProductResponse products = 1;
+}
+
+message GetProductRequest {
+  string product_id = 1;
+}

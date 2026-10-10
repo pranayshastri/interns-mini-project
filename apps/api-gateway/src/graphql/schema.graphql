@@ -1,0 +1,49 @@
+# GraphQL API Gateway Schema Specification
+# 
+# ARCHITECTURE NOTE:
+# Defined in ARCHITECTURE.md Section 6.2.
+# 
+# TODO: [Intern Task - GraphQL Types & Operations]
+# 
+# 1. Types:
+#   type User {
+#     id: ID!
+#     email: String!
+#     role: String!
+#     shopId: String
+#   }
+#   type AuthPayload {
+#     accessToken: String!
+#     user: User!
+#   }
+#   type Product {
+#     id: ID!
+#     shopId: ID!
+#     name: String!
+#     description: String!
+#     priceCents: Int!
+#     availableStock: Int!
+#   }
+#   type Order {
+#     id: ID!
+#     customerId: ID!
+#     status: String!
+#     totalAmountCents: Int!
+#     createdAt: String!
+#   }
+#   input OrderItemInput {
+#     productId: ID!
+#     shopId: ID!
+#     quantity: Int!
+#     unitPriceCents: Int!
+#   }
+# 
+# 2. Query:
+#   products: [Product!]!
+#   order(id: ID!): Order
+#   stock(productId: ID!): Int!
+# 
+# 3. Mutation:
+#   login(email: String!, password: String!): AuthPayload!
+#   createProduct(name: String!, description: String!, priceCents: Int!, initialStock: Int!): Product!
+#   createOrder(items: [OrderItemInput!]!, shippingAddress: String!): Order!

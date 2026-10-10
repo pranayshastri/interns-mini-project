@@ -1,0 +1,41 @@
+// Prisma Schema for Inventory Service (Database: inventory_db)
+// 
+// ARCHITECTURE NOTE:
+// Implements Idempotent Consumer Pattern (ARCHITECTURE.md Section 4.4).
+// Connects to PostgreSQL database: inventory_db.
+// 
+// TODO: [Intern Task - Inventory Models]
+// 1. Configure datasource with provider = "postgresql" and env("DATABASE_URL").
+// 2. Define ProductInventory model:
+//    - productId: UUID @id @map("product_id")
+//    - availableStock: Int @map("available_stock")
+//    - updatedAt: DateTime @default(now()) @map("updated_at")
+// 3. Define InboxEvent model:
+//    - eventId: UUID @id @map("event_id")
+//    - eventType: String @map("event_type")
+//    - processedAt: DateTime @default(now()) @map("processed_at")
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model ProductInventory {
+  productId      String   @id @map("product_id")
+  availableStock Int      @map("available_stock")
+  updatedAt      DateTime @default(now()) @map("updated_at")
+
+  @@map("product_inventory")
+}
+
+model InboxEvent {
+  eventId     String   @id @map("event_id")
+  eventType   String   @map("event_type")
+  processedAt DateTime @default(now()) @map("processed_at")
+
+  @@map("inbox_events")
+}

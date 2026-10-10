@@ -1,0 +1,12 @@
+{
+  "name": "@repo/proto",
+  "version": "0.0.1",
+  "private": true,
+  "main": "./index.js",
+  "types": "./index.d.ts",
+  "files": [
+    "*.proto",
+    "index.js",
+    "index.d.ts"
+  ]
+}

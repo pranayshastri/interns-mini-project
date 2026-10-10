@@ -1,0 +1,234 @@
+version: '3.9'
+
+networks:
+  platform-net:
+    driver: bridge
+
+volumes:
+  pg_data:
+  kafka_data:
+  valkey_data:
+
+services:
+  # =========================================================================
+  # 1. POSTGRESQL 16 (Multi-Database Setup: auth_db, catalog_db, order_db, inventory_db)
+  # =========================================================================
+  postgres:
+    image: postgres:16-alpine
+    container_name: shop-postgres
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: rootpassword
+      POSTGRES_MULTIPLE_DATABASES: auth_db,catalog_db,order_db,inventory_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+      - ./infra/postgres/init-multi-db.sh:/docker-entrypoint-initdb.d/01-init-multi-db.sh:ro
+      - ./infra/postgres/schema-init.sql:/docker-entrypoint-initdb.d/02-schema-init.sql:ro
+    networks:
+      - platform-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # =========================================================================
+  # 2. VALKEY (In-Memory Key-Value Store for Sessions & Caching)
+  # =========================================================================
+  valkey:
+    image: valkey/valkey:8-alpine
+    container_name: shop-valkey
+    restart: always
+    ports:
+      - "6379:6379"
+    volumes:
+      - valkey_data:/data
+    networks:
+      - platform-net
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # =========================================================================
+  # 3. APACHE KAFKA (KRAFT MODE - NO ZOOKEEPER REQUIRED)
+  # =========================================================================
+  kafka:
+    image: bitnami/kafka:3.7.0
+    container_name: shop-kafka
+    restart: always
+    ports:
+      - "9092:9092"   # Internal Docker Network
+      - "9094:9094"   # Host access
+    environment:
+      - KAFKA_CFG_NODE_ID=1
+      - KAFKA_CFG_PROCESS_ROLES=broker,controller
+      - KAFKA_CFG_CONTROLLER_QUORUM_VOTERS=1@kafka:9093
+      - KAFKA_KRAFT_CLUSTER_ID=MkU3OEVBNTcwNTJENDM2Qk
+      - KAFKA_CFG_LISTENERS=PLAINTEXT://:9092,CONTROLLER://:9093,EXTERNAL://:9094
+      - KAFKA_CFG_ADVERTISED_LISTENERS=PLAINTEXT://kafka:9092,EXTERNAL://localhost:9094
+      - KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP=CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,EXTERNAL:PLAINTEXT
+      - KAFKA_CFG_CONTROLLER_LISTENER_NAMES=CONTROLLER
+      - KAFKA_CFG_INTER_BROKER_LISTENER_NAME=PLAINTEXT
+      - KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE=true
+    volumes:
+      - kafka_data:/bitnami/kafka/data
+    networks:
+      - platform-net
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-topics.sh --bootstrap-server localhost:9092 --list || exit 0"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # =========================================================================
+  # 4. KAFKA UI (Visual Inspection Console on :8080)
+  # =========================================================================
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: shop-kafka-ui
+    ports:
+      - "8080:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: local-kraft
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
+    depends_on:
+      kafka:
+        condition: service_healthy
+    networks:
+      - platform-net
+
+  # =========================================================================
+  # 5. MICROSERVICES (NestJS services with mTLS mounting ./infra/certs)
+  # =========================================================================
+  auth-service:
+    build:
+      context: .
+      dockerfile: ./apps/auth-service/Dockerfile
+    container_name: shop-auth-service
+    ports:
+      - "50051:50051"
+    volumes:
+      - ./infra/certs:/certs:ro
+    environment:
+      PORT: 50051
+      DATABASE_URL: postgres://postgres:rootpassword@postgres:5432/auth_db?sslmode=disable
+      VALKEY_HOST: valkey
+      VALKEY_PORT: 6379
+      TLS_CERT_PATH: /certs/auth-service.crt
+      TLS_KEY_PATH: /certs/auth-service.key
+      TLS_CA_PATH: /certs/ca.crt
+    depends_on:
+      postgres:
+        condition: service_healthy
+      valkey:
+        condition: service_healthy
+    networks:
+      - platform-net
+
+  catalog-service:
+    build:
+      context: .
+      dockerfile: ./apps/catalog-service/Dockerfile
+    container_name: shop-catalog-service
+    ports:
+      - "50052:50052"
+    volumes:
+      - ./infra/certs:/certs:ro
+    environment:
+      PORT: 50052
+      DATABASE_URL: postgres://postgres:rootpassword@postgres:5432/catalog_db?sslmode=disable
+      VALKEY_HOST: valkey
+      VALKEY_PORT: 6379
+      TLS_CERT_PATH: /certs/catalog-service.crt
+      TLS_KEY_PATH: /certs/catalog-service.key
+      TLS_CA_PATH: /certs/ca.crt
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - platform-net
+
+  order-service:
+    build:
+      context: .
+      dockerfile: ./apps/order-service/Dockerfile
+    container_name: shop-order-service
+    ports:
+      - "50053:50053"
+    volumes:
+      - ./infra/certs:/certs:ro
+    environment:
+      PORT: 50053
+      DATABASE_URL: postgres://postgres:rootpassword@postgres:5432/order_db?sslmode=disable
+      KAFKA_BROKERS: kafka:9092
+      TLS_CERT_PATH: /certs/order-service.crt
+      TLS_KEY_PATH: /certs/order-service.key
+      TLS_CA_PATH: /certs/ca.crt
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    networks:
+      - platform-net
+
+  inventory-service:
+    build:
+      context: .
+      dockerfile: ./apps/inventory-service/Dockerfile
+    container_name: shop-inventory-service
+    ports:
+      - "50054:50054"
+    volumes:
+      - ./infra/certs:/certs:ro
+    environment:
+      PORT: 50054
+      DATABASE_URL: postgres://postgres:rootpassword@postgres:5432/inventory_db?sslmode=disable
+      KAFKA_BROKERS: kafka:9092
+      TLS_CERT_PATH: /certs/inventory-service.crt
+      TLS_KEY_PATH: /certs/inventory-service.key
+      TLS_CA_PATH: /certs/ca.crt
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    networks:
+      - platform-net
+
+  # =========================================================================
+  # 6. GRAPHQL API GATEWAY (NestJS GraphQL on :4000)
+  # =========================================================================
+  api-gateway:
+    build:
+      context: .
+      dockerfile: ./apps/api-gateway/Dockerfile
+    container_name: shop-api-gateway
+    ports:
+      - "4000:4000"
+    volumes:
+      - ./infra/certs:/certs:ro
+    environment:
+      PORT: 4000
+      VALKEY_HOST: valkey
+      VALKEY_PORT: 6379
+      AUTH_SERVICE_ADDR: auth-service:50051
+      CATALOG_SERVICE_ADDR: catalog-service:50052
+      ORDER_SERVICE_ADDR: order-service:50053
+      INVENTORY_SERVICE_ADDR: inventory-service:50054
+      TLS_CERT_PATH: /certs/api-gateway.crt
+      TLS_KEY_PATH: /certs/api-gateway.key
+      TLS_CA_PATH: /certs/ca.crt
+    depends_on:
+      - auth-service
+      - catalog-service
+      - order-service
+      - inventory-service
+      - valkey
+    networks:
+      - platform-net

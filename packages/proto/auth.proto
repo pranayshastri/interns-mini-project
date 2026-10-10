@@ -1,0 +1,31 @@
+syntax = "proto3";
+package shop.auth.v1;
+option go_package = "github.com/platform/gen/authv1";
+
+service AuthService {
+  rpc Authenticate (AuthRequest) returns (AuthResponse);
+  rpc ValidateToken (ValidateTokenRequest) returns (ValidateTokenResponse);
+}
+
+message AuthRequest {
+  string email = 1;
+  string password = 2;
+}
+
+message AuthResponse {
+  string access_token = 1;
+  string user_id = 2;
+  string role = 3; // CUSTOMER, SHOPKEEPER, ADMIN
+  string shop_id = 4;
+}
+
+message ValidateTokenRequest {
+  string token = 1;
+}
+
+message ValidateTokenResponse {
+  bool is_valid = 1;
+  string user_id = 2;
+  string role = 3;
+  string shop_id = 4;
+}

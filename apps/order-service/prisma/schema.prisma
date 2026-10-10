@@ -1,0 +1,81 @@
+// Prisma Schema for Order Service (Database: order_db)
+// 
+// ARCHITECTURE NOTE:
+// Implements Transactional Outbox Pattern (ARCHITECTURE.md Section 4.3).
+// Connects to PostgreSQL database: order_db.
+// 
+// TODO: [Intern Task - Outbox Schema & Models]
+// 1. Configure datasource with provider = "postgresql" and env("DATABASE_URL").
+// 2. Define Order model:
+//    - id: UUID @id @default(uuid())
+//    - customerId: UUID @map("customer_id")
+//    - totalAmountCents: BigInt @map("total_amount_cents")
+//    - status: String @default("PENDING")
+//    - shippingAddress: String @map("shipping_address")
+//    - createdAt: DateTime @default(now()) @map("created_at")
+//    - items: OrderItem[]
+// 3. Define OrderItem model:
+//    - id: UUID @id @default(uuid())
+//    - orderId: String @map("order_id")
+//    - productId: UUID @map("product_id")
+//    - shopId: UUID @map("shop_id")
+//    - quantity: Int
+//    - unitPriceCents: BigInt @map("unit_price_cents")
+// 4. Define OutboxEvent model:
+//    - id: UUID @id @default(uuid())
+//    - aggregateType: String @map("aggregate_type") // 'ORDER'
+//    - aggregateId: String @map("aggregate_id")     // order_id
+//    - eventType: String @map("event_type")         // 'OrderCreated'
+//    - topic: String                                // 'shop.orders.v1'
+//    - payload: Json
+//    - status: String @default("PENDING")           // 'PENDING', 'PROCESSING', 'PUBLISHED', 'FAILED'
+//    - createdAt: DateTime @default(now()) @map("created_at")
+//    - publishedAt: DateTime? @map("published_at")
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Order {
+  id               String      @id @default(uuid())
+  customerId       String      @map("customer_id")
+  totalAmountCents BigInt      @map("total_amount_cents")
+  status           String      @default("PENDING")
+  shippingAddress  String      @map("shipping_address")
+  createdAt        DateTime    @default(now()) @map("created_at")
+  items            OrderItem[]
+
+  @@map("orders")
+}
+
+model OrderItem {
+  id             String  @id @default(uuid())
+  orderId        String  @map("order_id")
+  productId      String  @map("product_id")
+  shopId         String  @map("shop_id")
+  quantity       Int
+  unitPriceCents BigInt  @map("unit_price_cents")
+  order          Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@map("order_items")
+}
+
+model OutboxEvent {
+  id            String    @id @default(uuid())
+  aggregateType String    @map("aggregate_type")
+  aggregateId   String    @map("aggregate_id")
+  eventType     String    @map("event_type")
+  topic         String
+  payload       Json
+  status        String    @default("PENDING")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  publishedAt   DateTime? @map("published_at")
+
+  @@index([status, createdAt])
+  @@map("outbox_events")
+}
