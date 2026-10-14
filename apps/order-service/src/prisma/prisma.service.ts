@@ -1,11 +1,21 @@
-/**
- * Prisma Database Client Service for Order Service
- * 
- * ARCHITECTURE ROLE:
- * - Connects to PostgreSQL `order_db`
- * - Executes atomic multi-table transactions (orders + order_items + outbox_events)
- * 
- * TODO: [Intern Task - Prisma Service]
- * 1. Extend PrismaClient from '@prisma/client'.
- * 2. Connect onModuleInit() and disconnect onModuleDestroy().
- */
+import {
+  Injectable,
+  OnModuleDestroy,
+  OnModuleInit,
+} from '@nestjs/common';
+import { PrismaClient } from '@prisma/client';
+
+@Injectable()
+export class PrismaService
+  extends PrismaClient
+  implements OnModuleInit, OnModuleDestroy
+{
+  async onModuleInit(): Promise<void> {
+    await this.$connect();
+    console.log('Order Service connected to PostgreSQL');
+  }
+
+  async onModuleDestroy(): Promise<void> {
+    await this.$disconnect();
+  }
+}
