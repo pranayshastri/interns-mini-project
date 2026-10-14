@@ -1,11 +1,16 @@
-/**
- * Prisma Database Client Service for Inventory Service
- * 
- * ARCHITECTURE ROLE:
- * - Connects to PostgreSQL `inventory_db`
- * - Handles product_inventory updates and inbox_events deduplication
- * 
- * TODO: [Intern Task - Prisma Service]
- * 1. Extend PrismaClient from '@prisma/client'.
- * 2. Connect onModuleInit() and disconnect onModuleDestroy().
- */
+import { Injectable, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
+import { PrismaClient } from '@prisma/client';
+
+@Injectable()
+export class PrismaService
+  extends PrismaClient
+  implements OnModuleInit, OnModuleDestroy
+{
+  async onModuleInit(): Promise<void> {
+    await this.$connect();
+  }
+
+  async onModuleDestroy(): Promise<void> {
+    await this.$disconnect();
+  }
+}
