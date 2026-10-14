@@ -1,8 +1,17 @@
+
 import { Injectable, Logger } from '@nestjs/common';
-import { Cron, CronExpression } from '@nestjs/schedule';
+import { Interval } from '@nestjs/schedule';
 import { Prisma } from '@prisma/client';
 import { KafkaProducerService } from '../kafka/kafka-producer.service';
 import { PrismaService } from '../prisma/prisma.service';
+
+interface ClaimedOutboxEvent {
+  id: string;
+  aggregateId: string;
+  topic: string;
+  eventType: string;
+  payload: Prisma.JsonValue;
+}
 
 @Injectable()
 export class OutboxPollerWorker {
@@ -14,7 +23,7 @@ export class OutboxPollerWorker {
     private readonly kafkaProducer: KafkaProducerService,
   ) {}
 
-  @Cron(CronExpression.EVERY_5_SECONDS)
+  @Interval(500)
   async pollOutbox(): Promise<void> {
     if (this.isRunning) {
       return;
@@ -23,22 +32,39 @@ export class OutboxPollerWorker {
     this.isRunning = true;
 
     try {
-      const events = await this.prisma.outboxEvent.findMany({
-        where: { status: 'PENDING' },
-        orderBy: { createdAt: 'asc' },
-        take: 20,
-      });
+      const events = await this.prisma.$transaction((tx) =>
+        tx.$queryRaw<ClaimedOutboxEvent[]>`
+          WITH selected AS (
+            SELECT id
+            FROM outbox_events
+            WHERE status = 'PENDING'
+            ORDER BY created_at ASC
+            LIMIT 20
+            FOR UPDATE SKIP LOCKED
+          )
+          UPDATE outbox_events AS outbox
+          SET status = 'PROCESSING'
+          FROM selected
+          WHERE outbox.id = selected.id
+          RETURNING
+            outbox.id,
+            outbox.aggregate_id AS "aggregateId",
+            outbox.topic,
+            outbox.event_type AS "eventType",
+            outbox.payload
+        `,
+      );
 
       for (const event of events) {
         try {
-         await this.kafkaProducer.publishOrderEvent(
-           event.topic,
-           event.aggregateId,
-           event.payload as Prisma.JsonObject,
-           {
-           event_id: event.id,
-           event_type: event.eventType,
-           },
+          await this.kafkaProducer.publishOrderEvent(
+            event.topic,
+            event.aggregateId,
+            event.payload,
+            {
+              event_id: event.id,
+              event_type: event.eventType,
+            },
           );
 
           await this.prisma.outboxEvent.update({
@@ -53,6 +79,25 @@ export class OutboxPollerWorker {
             `Failed to publish outbox event ${event.id}`,
             error instanceof Error ? error.stack : String(error),
           );
+
+          try {
+            await this.prisma.outboxEvent.updateMany({
+              where: {
+                id: event.id,
+                status: 'PROCESSING',
+              },
+              data: {
+                status: 'PENDING',
+              },
+            });
+          } catch (retryError: unknown) {
+            this.logger.error(
+              `Failed to reset outbox event ${event.id} for retry`,
+              retryError instanceof Error
+                ? retryError.stack
+                : String(retryError),
+            );
+          }
         }
       }
     } catch (error: unknown) {
