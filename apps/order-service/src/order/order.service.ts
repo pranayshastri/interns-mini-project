@@ -1,28 +1,140 @@
-/**
- * OrderService Business Logic & Transactional Outbox
- * 
- * ARCHITECTURE ROLE:
- * - Solves the Dual-Write Problem! (ARCHITECTURE.md Section 4.1 & 4.2)
- * - Writes BOTH the order AND the outbox event within the EXACT SAME PostgreSQL database transaction.
- * - NEVER calls Kafka directly inside this service! (Kafka is handled asynchronously by the Outbox Poller).
- * 
- * TODO: [Intern Task - Atomic Outbox Order Creation]
- * 1. Inject PrismaService.
- * 2. Implement `createOrder({ customer_id, items, shipping_address })`:
- *    - Calculate totalAmountCents from items.
- *    - Wrap DB writes in `this.prisma.$transaction(async (tx) => { ... })`:
- *      Step A: INSERT INTO orders (customer_id, total_amount_cents, status, shipping_address)
- *      Step B: INSERT INTO order_items (order_id, product_id, shop_id, quantity, unit_price_cents)
- *      Step C: INSERT INTO outbox_events:
- *              - aggregate_type: 'ORDER'
- *              - aggregate_id: order.id
- *              - event_type: 'OrderCreated'
- *              - topic: 'shop.orders.v1'
- *              - payload: { orderId: order.id, customerId: customer_id, items, totalAmountCents }
- *              - status: 'PENDING'
- *    - If transaction rolls back (e.g. invalid payload), NO outbox event is ever written (Lab 1 test)!
- *    - Return created order response.
- * 3. Implement `getOrder(orderId)`:
- *    - Query order and associated items from Prisma.
- *    - Return order data.
- */
+import { Injectable } from '@nestjs/common';
+import { RpcException } from '@nestjs/microservices';
+import { Prisma } from '@prisma/client';
+import { PrismaService } from '../prisma/prisma.service';
+
+interface OrderItemInput {
+  product_id: string;
+  shop_id: string;
+  quantity: number;
+  unit_price_cents: number | string | bigint;
+}
+
+interface CreateOrderInput {
+  customer_id: string;
+  items: OrderItemInput[];
+  shipping_address: string;
+}
+
+@Injectable()
+export class OrderService {
+  constructor(private readonly prisma: PrismaService) {}
+
+  async createOrder(input: CreateOrderInput) {
+    const { customer_id, items, shipping_address } = input;
+
+    if (
+      !customer_id ||
+      !shipping_address ||
+      !Array.isArray(items) ||
+      items.length === 0
+    ) {
+      throw new RpcException({
+        code: 3,
+        message:
+          'Customer, shipping address, and at least one item are required',
+      });
+    }
+
+    const normalizedItems = items.map((item) => {
+      const quantity = Number(item.quantity);
+      let unitPrice: bigint;
+
+      try {
+        unitPrice = BigInt(item.unit_price_cents);
+      } catch {
+        throw new RpcException({
+          code: 3,
+          message: 'Invalid item price',
+        });
+      }
+
+      if (
+        !item.product_id ||
+        !item.shop_id ||
+        !Number.isSafeInteger(quantity) ||
+        quantity <= 0 ||
+        unitPrice < 0n
+      ) {
+        throw new RpcException({
+          code: 3,
+          message: 'Invalid order item',
+        });
+      }
+
+      return {
+        productId: item.product_id,
+        shopId: item.shop_id,
+        quantity,
+        unitPriceCents: unitPrice,
+      };
+    });
+
+    const totalAmountCents = normalizedItems.reduce(
+      (total, item) =>
+        total + BigInt(item.quantity) * item.unitPriceCents,
+      0n,
+    );
+
+    return this.prisma.$transaction(async (tx) => {
+      const createdOrder = await tx.order.create({
+        data: {
+          customerId: customer_id,
+          totalAmountCents,
+          status: 'PENDING',
+          shippingAddress: shipping_address,
+          items: {
+            create: normalizedItems,
+          },
+        },
+        include: { items: true },
+      });
+
+      await tx.outboxEvent.create({
+        data: {
+          aggregateType: 'ORDER',
+          aggregateId: createdOrder.id,
+          eventType: 'OrderCreated',
+          topic: 'shop.orders.v1',
+          status: 'PENDING',
+          payload: {
+            orderId: createdOrder.id,
+            customerId: customer_id,
+            items: normalizedItems.map((item) => ({
+              productId: item.productId,
+              shopId: item.shopId,
+              quantity: item.quantity,
+              unitPriceCents: item.unitPriceCents.toString(),
+            })),
+            totalAmountCents: totalAmountCents.toString(),
+          } as Prisma.InputJsonValue,
+        },
+      });
+
+      return createdOrder;
+    });
+  }
+
+  async getOrder(orderId: string) {
+    if (!orderId) {
+      throw new RpcException({
+        code: 3,
+        message: 'Order ID is required',
+      });
+    }
+
+    const order = await this.prisma.order.findUnique({
+      where: { id: orderId },
+      include: { items: true },
+    });
+
+    if (!order) {
+      throw new RpcException({
+        code: 5,
+        message: 'Order not found',
+      });
+    }
+
+    return order;
+  }
+}
