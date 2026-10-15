@@ -16,6 +16,12 @@ interface CreateOrderInput {
   shipping_address: string;
 }
 
+function isValidUuid(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+    value,
+  );
+}
+
 @Injectable()
 export class OrderService {
   constructor(private readonly prisma: PrismaService) {}
@@ -25,7 +31,8 @@ export class OrderService {
 
     if (
       !customer_id ||
-      !shipping_address ||
+      !isValidUuid(customer_id) ||
+      !shipping_address?.trim() ||
       !Array.isArray(items) ||
       items.length === 0
     ) {
@@ -50,8 +57,8 @@ export class OrderService {
       }
 
       if (
-        !item.product_id ||
-        !item.shop_id ||
+        !isValidUuid(item.product_id) ||
+        !isValidUuid(item.shop_id) ||
         !Number.isSafeInteger(quantity) ||
         quantity <= 0 ||
         unitPrice < 0n
@@ -116,10 +123,10 @@ export class OrderService {
   }
 
   async getOrder(orderId: string) {
-    if (!orderId) {
+    if (!isValidUuid(orderId)) {
       throw new RpcException({
         code: 3,
-        message: 'Order ID is required',
+        message: 'A valid order UUID is required',
       });
     }
 
