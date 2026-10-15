@@ -1,9 +1,15 @@
+.git
 **/node_modules
 **/dist
-.git
+**/.next*
+**/.turbo
+**/generated
+**/.env
+**/.env.*
+!**/.env.example
+infra/certs
 *.log
 Dockerfile*
 docker-compose*
 AGENTS.md
 kilo.json
-.env

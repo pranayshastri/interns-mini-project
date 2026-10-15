@@ -3,15 +3,29 @@
   "ui": "tui",
   "tasks": {
     "build": {
-      "dependsOn": ["^build"],
-      "inputs": ["$TURBO_DEFAULT$", ".env*"],
-      "outputs": [".next/**", "!.next/cache/**", "!.next/dev/**", "dist/**"]
+      "dependsOn": [
+        "^build"
+      ],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        ".env*"
+      ],
+      "outputs": [
+        ".next/**",
+        "!.next/cache/**",
+        "!.next/dev/**",
+        "dist/**"
+      ]
     },
     "lint": {
-      "dependsOn": ["^lint"]
+      "dependsOn": [
+        "^lint"
+      ]
     },
     "check-types": {
-      "dependsOn": ["^check-types"]
+      "dependsOn": [
+        "^check-types"
+      ]
     },
     "dev": {
       "cache": false,
@@ -23,6 +37,23 @@
     },
     "prisma:generate": {
       "cache": false
+    },
+    "auth-service#build": {
+      "dependsOn": [
+        "^build"
+      ],
+      "cache": false,
+      "outputs": [
+        "dist/**",
+        "generated/prisma/**"
+      ]
     }
-  }
+  },
+  "globalEnv": [
+    "API_GATEWAY_URL",
+    "NEXT_DIST_DIR",
+    "ROBONEST_AUTH_ENABLED",
+    "ROBONEST_VERIFIED_CAPABILITIES",
+    "CHROME_PATH"
+  ]
 }

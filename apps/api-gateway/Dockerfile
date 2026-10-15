@@ -1,4 +1,4 @@
-FROM node:24-alpine AS builder
+FROM node:26-alpine AS builder
 WORKDIR /app
 COPY package*.json ./
 COPY turbo.json ./
@@ -7,7 +7,7 @@ COPY apps/api-gateway ./apps/api-gateway
 RUN npm install
 RUN npm run build --workspace=api-gateway
 
-FROM node:24-alpine AS runner
+FROM node:26-alpine AS runner
 WORKDIR /app
 COPY --from=builder /app ./
 EXPOSE 4000

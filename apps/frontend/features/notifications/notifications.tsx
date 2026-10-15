@@ -1,0 +1,12 @@
+'use client';
+import Link from 'next/link';
+import { useCallback, useState } from 'react';
+import { useApp } from '../../components/providers';
+import { Empty, ErrorState, Guard, Loading, useResource } from '../../components/feedback/states';
+import { errorMessage, internalPath } from '../../lib/contracts';
+export function NotificationsPage({ seller = false }: { seller?: boolean }) { return <Guard role={seller ? 'SHOPKEEPER' : undefined}><Notifications/></Guard>; }
+function Notifications() {
+  const { adapter } = useApp(); const load = useCallback(() => adapter!.notifications(), [adapter]); const { data, error, loading, reload } = useResource(load, !!adapter); const [unread, setUnread] = useState(false); const [busy, setBusy] = useState(''); const [failure, setFailure] = useState(''); const notices = [...new Map((data || []).map(n => [n.id, n])).values()].filter(n => !unread || !n.read);
+  async function mark(id: string) { if (!adapter || busy) return; setBusy(id); setFailure(''); try { await adapter.markRead(id); reload(); window.dispatchEvent(new Event('robonest:notifications')); } catch(e) { setFailure(errorMessage(e)); } finally { setBusy(''); } }
+  return <><div className="page-title"><div><span className="eyebrow">IN THE LOOP</span><h1>Your updates</h1><p className="muted">Order updates and little things worth knowing.</p></div><button className="button secondary" onClick={reload}>Refresh</button></div><div className="filter-chips"><button className={!unread ? 'selected' : ''} onClick={() => setUnread(false)}>All updates</button><button className={unread ? 'selected' : ''} onClick={() => setUnread(true)}>Unread</button></div>{failure && <ErrorState error={failure}/>} {loading ? <Loading/> : error ? <ErrorState error={error} retry={reload}/> : notices.length ? <div className="notification-list">{notices.map(n => <article className="panel notification-card" key={n.id}>{!n.read && <span className="unread" aria-label="Unread"/>}<div><h3><Link href={internalPath(n.href, '/notifications')}>{n.title} ↗</Link></h3><p>{n.body}</p><time dateTime={n.createdAt}>{new Date(n.createdAt).toLocaleString('en-IN')}</time></div>{!n.read && <button className="button secondary" onClick={() => mark(n.id)} disabled={!!busy}>{busy === n.id ? 'Saving…' : 'Mark as read'}</button>}</article>)}</div> : <Empty title="You’re all caught up">New updates will appear here. Check back after your next order.</Empty>}</>;
+}

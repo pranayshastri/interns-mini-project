@@ -3,13 +3,19 @@
   "version": "0.0.1",
   "private": true,
   "scripts": {
-    "build": "nest build",
+    "build": "npm run prisma:generate && nest build",
     "dev": "nest start --watch",
+    "dev:local": "node scripts/start-local.cjs",
     "start": "nest start",
     "start:prod": "node dist/main",
     "lint": "eslint \"src/**/*.ts\"",
     "prisma:generate": "prisma generate",
-    "prisma:migrate": "prisma migrate dev"
+    "prisma:migrate": "prisma migrate dev",
+    "test:mtls": "npm run test:integration",
+    "test:integration": "npm run build && npm run build --workspace=api-gateway && node --test test/mtls.test.cjs",
+    "test:browser": "AUTH_BROWSER_TEST=1 npm run test:integration",
+    "account:provision": "node scripts/provision-account.cjs",
+    "schema:admin": "node scripts/apply-admin-schema.cjs"
   },
   "dependencies": {
     "@grpc/grpc-js": "^1.12.5",

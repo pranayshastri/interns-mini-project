@@ -6,7 +6,9 @@
         "name": "next"
       }
     ],
-    "strictNullChecks": true
+    "strictNullChecks": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true
   },
   "include": [
     "**/*.ts",
@@ -15,5 +17,7 @@
     "next.config.js",
     ".next/types/**/*.ts"
   ],
-  "exclude": ["node_modules"]
+  "exclude": [
+    "node_modules"
+  ]
 }
