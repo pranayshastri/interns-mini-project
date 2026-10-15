@@ -1,12 +1,13 @@
-/**
- * Inventory Service - App Module
- * 
- * ARCHITECTURE ROLE:
- * - Provides PrismaService (connected to inventory_db)
- * - Provides OrderConsumerService (Idempotent Kafka Consumer on shop.orders.v1)
- * - Provides InventoryService and InventoryController
- * 
- * TODO: [Intern Task - Module Setup]
- * 1. Register PrismaService, OrderConsumerService, and InventoryService in providers.
- * 2. Register InventoryController in controllers.
- */
+import { Module } from '@nestjs/common';
+import { ConfigModule } from '@nestjs/config';
+import { PrismaService } from './prisma/prisma.service';
+import { InventoryService } from './inventory/inventory.service';
+import { InventoryController } from './inventory/inventory.controller';
+import { OrderConsumerService } from './kafka/order-consumer.service';
+
+@Module({
+  imports: [ConfigModule.forRoot({ isGlobal: true })],
+  controllers: [InventoryController],
+  providers: [PrismaService, InventoryService, OrderConsumerService],
+})
+export class AppModule {}
