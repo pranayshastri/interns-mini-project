@@ -1,8 +1,12 @@
-# Distributed Event-Driven E-Commerce System (Interns Project)
+# RoboNest — Electronics & Robotics Components
 
-Welcome! This repository is a Turborepo monorepo designed for hands-on mastery of distributed systems, data consistency, and microservice security.
+RoboNest is a multi-vendor electronics and robotics components project. This Turborepo explores distributed systems, data consistency, and microservice security.
 
-All service files have been scaffolded as skeleton files with detailed `// TODO: [Intern Task]` comments guiding your implementation step by step.
+The Auth/Profile slice has a real local implementation. Commerce services still contain `// TODO: [Intern Task]` scaffolds; this is not a completed e-commerce platform.
+
+For the configured local Auth stack, run `npm run dev:auth` from the repository root and open the login URL printed by the launcher. See [Auth setup and prerequisites](apps/auth-service/README.md).
+
+`npm run dev` is the Turborepo command that starts each workspace's `dev` script; it does not start infrastructure, prepare Auth certificates, or verify a working login. `npm run dev:auth` starts the configured local Auth stack and checks the real request path. Run only one of these commands at a time on the default ports: frontend 3000, gateway 4000, and Auth gRPC 50051. They are development entry points, not separate customer/admin/seller websites.
 
 ---
 

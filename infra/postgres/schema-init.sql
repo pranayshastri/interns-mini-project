@@ -14,10 +14,28 @@ CREATE TABLE IF NOT EXISTS users (
     shop_id UUID NULL
 );
 
+-- Additive upgrade for existing Auth users. No roles, passwords or rows are replaced.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS status VARCHAR(16) NOT NULL DEFAULT 'ACTIVE';
+ALTER TABLE users ADD COLUMN IF NOT EXISTS session_version INTEGER NOT NULL DEFAULT 0;
+CREATE TABLE IF NOT EXISTS admin_audit_events (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  actor_id UUID NOT NULL,
+  actor_name VARCHAR(128) NOT NULL,
+  target_id UUID NOT NULL,
+  target_email VARCHAR(255) NOT NULL,
+  action VARCHAR(48) NOT NULL,
+  reason VARCHAR(500) NOT NULL,
+  previous_status VARCHAR(16) NOT NULL,
+  new_status VARCHAR(16) NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS users_role_status_id_idx ON users(role, status, id);
+CREATE INDEX IF NOT EXISTS admin_audit_created_id_idx ON admin_audit_events(created_at DESC, id);
+
 -- Seed 3 Users in ecommerce_auth_db (Password: 'Password123' hashed with bcrypt)
 INSERT INTO users (id, email, password_hash, role, full_name, shop_id) VALUES
 ('a0000000-0000-0000-0000-000000000001', 'admin@shopping.com', '$2a$10$7EqJtq98hPqEX7fNZaFWoO.eR8M1gN7aU5F3aHkP4.N4/M.b/Vn1y', 'ADMIN', 'Platform Admin', NULL),
-('b0000000-0000-0000-0000-000000000002', 'shopkeeper@gadgets.com', '$2a$10$7EqJtq98hPqEX7fNZaFWoO.eR8M1gN7aU5F3aHkP4.N4/M.b/Vn1y', 'SHOPKEEPER', 'John Merchant', 's0000000-0000-0000-0000-000000000001'),
+('b0000000-0000-0000-0000-000000000002', 'shopkeeper@gadgets.com', '$2a$10$7EqJtq98hPqEX7fNZaFWoO.eR8M1gN7aU5F3aHkP4.N4/M.b/Vn1y', 'SHOPKEEPER', 'John Merchant', 'd0000000-0000-0000-0000-000000000001'),
 ('c0000000-0000-0000-0000-000000000003', 'customer@gmail.com', '$2a$10$7EqJtq98hPqEX7fNZaFWoO.eR8M1gN7aU5F3aHkP4.N4/M.b/Vn1y', 'CUSTOMER', 'Alice Consumer', NULL)
 ON CONFLICT (email) DO NOTHING;
 
@@ -34,7 +52,7 @@ CREATE TABLE IF NOT EXISTS products (
 );
 
 INSERT INTO products (id, shop_id, name, description, price_cents) VALUES
-('p0000000-0000-0000-0000-000000000001', 's0000000-0000-0000-0000-000000000001', 'Mechanical Keyboard', 'RGB Hot-swappable Mechanical Keyboard', 8900)
+('e0000000-0000-0000-0000-000000000001', 'd0000000-0000-0000-0000-000000000001', 'Mechanical Keyboard', 'RGB Hot-swappable Mechanical Keyboard', 8900)
 ON CONFLICT (id) DO NOTHING;
 
 -- 3. INVENTORY SERVICE DATABASE
@@ -53,7 +71,7 @@ CREATE TABLE IF NOT EXISTS inbox_events (
 );
 
 INSERT INTO product_inventory (product_id, available_stock) VALUES
-('p0000000-0000-0000-0000-000000000001', 50)
+('e0000000-0000-0000-0000-000000000001', 50)
 ON CONFLICT (product_id) DO NOTHING;
 
 -- 4. ORDER SERVICE DATABASE (Transactional Outbox Pattern)

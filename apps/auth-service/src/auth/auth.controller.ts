@@ -1,17 +1,28 @@
-/**
- * gRPC Controller for AuthService
- * 
- * ARCHITECTURE ROLE:
- * - Implements protobuf service `shop.auth.v1.AuthService` (proto/auth.proto)
- * 
- * TODO: [Intern Task - gRPC Controller Methods]
- * 1. Annotate class with @Controller().
- * 2. Implement @GrpcMethod('AuthService', 'Authenticate'):
- *    - Receives { email, password }.
- *    - Delegates to authService.authenticate(email, password).
- *    - Returns AuthResponse: { access_token, user_id, role, shop_id }.
- * 3. Implement @GrpcMethod('AuthService', 'ValidateToken'):
- *    - Receives { token }.
- *    - Delegates to authService.validateToken(token).
- *    - Returns ValidateTokenResponse: { is_valid, user_id, role, shop_id }.
- */
+import { Controller } from '@nestjs/common';
+import { GrpcMethod, RpcException } from '@nestjs/microservices';
+import { status } from '@grpc/grpc-js';
+import { AuthService } from './auth.service';
+
+@Controller()
+export class AuthController {
+  constructor(private readonly auth: AuthService) {}
+  private async safe<T>(operation: () => Promise<T>): Promise<T> {
+    try { return await operation(); }
+    catch (error) {
+      if (error instanceof RpcException) throw error;
+      throw new RpcException({ code: status.UNAVAILABLE, message: 'Account service is temporarily unavailable.' });
+    }
+  }
+  @GrpcMethod('AuthService', 'Register') register(data: any) { return this.safe(() => this.auth.register(data)); }
+  @GrpcMethod('AuthService', 'Authenticate') authenticate(data: any) { return this.safe(() => this.auth.authenticate(data)); }
+  @GrpcMethod('AuthService', 'ValidateToken') validate(data: any) { return this.safe(() => this.auth.validateToken(data)); }
+  @GrpcMethod('AuthService', 'GetProfile') profile(data: any) { return this.safe(() => this.auth.getProfile(data)); }
+  @GrpcMethod('AuthService', 'UpdateProfile') update(data: any) { return this.safe(() => this.auth.updateProfile(data)); }
+  @GrpcMethod('AuthService', 'AdminUsers') adminUsers(data: any) { return this.safe(() => this.auth.adminUsers(data)); }
+  @GrpcMethod('AuthService', 'AdminUser') adminUser(data: any) { return this.safe(() => this.auth.adminUser(data)); }
+  @GrpcMethod('AuthService', 'AdminSetStatus') adminStatus(data: any) { return this.safe(() => this.auth.adminSetStatus(data)); }
+  @GrpcMethod('AuthService', 'AdminOverview') adminOverview(data: any) { return this.safe(() => this.auth.adminOverview(data)); }
+  @GrpcMethod('AuthService', 'AdminActivity') adminActivity(data: any) { return this.safe(() => this.auth.adminActivity(data)); }
+  @GrpcMethod('AuthService', 'AdminHealth') adminHealth(data: any) { return this.safe(() => this.auth.adminHealth(data)); }
+  @GrpcMethod('AuthService', 'Logout') logout(data: any) { return this.safe(() => this.auth.logout(data)); }
+}

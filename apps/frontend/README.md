@@ -1,36 +1,26 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/create-next-app).
+# RoboNest frontend
 
-## Getting Started
-
-First, run the development server:
+RoboNest is an electronics and robotics components storefront. This frontend uses real same-origin `POST /graphql` requests. No demo mode, sample account, fixture catalog, or simulated payment is supported. Unsupported operations report unavailable; an empty successful catalog response shows an empty state.
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+cd /home/ankit/pro/dezinetproject/interns-mini-project
+npm run dev:auth
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+`API_GATEWAY_URL` defaults to `http://127.0.0.1:4000` and is server-only. Authentication is enabled by default; `ROBONEST_AUTH_ENABLED=false` explicitly disables it. The root launcher configures the gateway and frontend origin together. Restart/rebuild after configuration changes.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+`ROBONEST_VERIFIED_CAPABILITIES` defaults to empty. The baseline adapter supports `products,stock,order,createProduct,createOrder`; enable only operations verified with their backend owners. The current commerce gateway resolvers are TODOs, so do not enable these yet. Product detail, seller listing/editing, quote/payment, notifications and invoices await agreed API implementations.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load Inter, a custom Google Font.
+JWT is carried in the gateway's HttpOnly session cookie. Identity comes from `me`. The gateway talks to internal services using gRPC with mTLS; no keys, certificates, database credentials or internal service calls belong in browser code.
 
-## Learn More
+[Integration handoff](../../docs/FRONTEND_INTEGRATION.md) · [Adding database data](../../docs/DATABASE_DATA_GUIDE.md)
 
-To learn more about Next.js, take a look at the following resources:
+```bash
+npm run check-types --workspace=frontend
+npm run lint --workspace=frontend
+CHROME_PATH=/usr/bin/google-chrome npm run test:browser --workspace=frontend
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+These browser tests verify frontend behavior without claiming real commerce service integration. Separate Auth integration tests require the infrastructure described in `apps/auth-service/README.md`.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Customer signup is public. ADMIN and SHOPKEEPER accounts use the [privileged account provisioning command](../auth-service/README.md#create-real-accounts); all three roles then sign in on the same page.

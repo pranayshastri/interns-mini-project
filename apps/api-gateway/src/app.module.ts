@@ -1,23 +1,25 @@
-/**
- * NestJS API Gateway - Root Module
- * 
- * ARCHITECTURE ROLE:
- * - Aggregates GraphQL module with Apollo Driver
- * - Registers gRPC client microservice proxies for internal services (mTLS enabled)
- * - Registers Valkey service for session management & cache
- * - Registers resolvers (AuthResolver, CatalogResolver, OrderResolver, InventoryResolver)
- * 
- * TODO: [Intern Task - Root Module Setup]
- * 1. Configure GraphQLModule.forRoot<ApolloDriverConfig>({
- *      driver: ApolloDriver,
- *      autoSchemaFile: true (or schema.graphql path),
- *      playground: true,
- *      context: ({ req }) => ({ req }),
- *    })
- * 2. Configure ClientsModule.register([...]) for the 4 gRPC microservices:
- *    - AUTH_PACKAGE: package 'shop.auth.v1', proto 'auth.proto', url AUTH_SERVICE_ADDR (:50051), mTLS credentials
- *    - CATALOG_PACKAGE: package 'shop.catalog.v1', proto 'catalog.proto', url CATALOG_SERVICE_ADDR (:50052), mTLS credentials
- *    - ORDER_PACKAGE: package 'shop.order.v1', proto 'order.proto', url ORDER_SERVICE_ADDR (:50053), mTLS credentials
- *    - INVENTORY_PACKAGE: package 'shop.inventory.v1', proto 'inventory.proto', url INVENTORY_SERVICE_ADDR (:50054), mTLS credentials
- * 3. Provide ValkeyService and all GraphQL Resolvers.
- */
+import { MiddlewareConsumer, Module, NestModule, RequestMethod } from '@nestjs/common';
+import { GraphQLModule } from '@nestjs/graphql';
+import { ApolloDriver, ApolloDriverConfig } from '@nestjs/apollo';
+import { AuthClient } from './grpc/auth-client.service';
+import { AuthResolver, authTypeDefs } from './resolvers/auth.resolver';
+import { GraphqlRequestMiddleware } from './security/graphql-request.middleware';
+
+@Module({
+  imports: [GraphQLModule.forRoot<ApolloDriverConfig>({
+    driver: ApolloDriver,
+    typeDefs: authTypeDefs,
+    playground: false,
+    introspection: process.env.NODE_ENV !== 'production',
+    csrfPrevention: true,
+    includeStacktraceInErrorResponses: false,
+    context: ({ req, res }) => ({ req, res }),
+    formatError: error => ({ message: error.extensions?.code === 'INTERNAL_SERVER_ERROR' ? 'Something went wrong. Please try again.' : error.message, extensions: { code: error.extensions?.code } }),
+  })],
+  providers: [AuthClient, AuthResolver],
+})
+export class AppModule implements NestModule {
+  configure(consumer: MiddlewareConsumer) {
+    consumer.apply(GraphqlRequestMiddleware).forRoutes({ path: 'graphql', method: RequestMethod.ALL });
+  }
+}

@@ -1,24 +1,184 @@
-/**
- * AuthService Business Logic
- * 
- * ARCHITECTURE ROLE:
- * - Performs credential verification against PostgreSQL `auth_db` using Prisma ORM
- * - Uses bcrypt for password hash verification
- * - Issues JWTs with user claims (id, role: CUSTOMER | SHOPKEEPER | ADMIN, shopId)
- * - Tracks sessions in Valkey
- * 
- * TODO: [Intern Task - Authentication Logic]
- * 1. Inject PrismaService, JwtService, and ValkeyService.
- * 2. Implement `authenticate(email, password)`:
- *    - Query user by email from PostgreSQL via `this.prisma.user.findUnique({ where: { email } })`.
- *    - If user not found, throw RpcException (NOT_FOUND or UNAUTHENTICATED).
- *    - Verify password hash using `bcrypt.compare(password, user.passwordHash)`.
- *    - If password mismatch, throw RpcException (UNAUTHENTICATED).
- *    - Sign JWT containing payload: { sub: user.id, email: user.email, role: user.role, shopId: user.shopId }.
- *    - Store session in Valkey: `await this.valkey.saveSession(user.id, token, 3600)`.
- *    - Return { access_token, user_id: user.id, role: user.role, shop_id: user.shopId || '' }.
- * 3. Implement `validateToken(token)`:
- *    - Verify JWT signature with JwtService.verify(token).
- *    - Check if session is revoked in Valkey.
- *    - Return { is_valid: true, user_id, role, shop_id }.
- */
+import { Injectable } from '@nestjs/common';
+import { JwtService } from '@nestjs/jwt';
+import { RpcException } from '@nestjs/microservices';
+import { status } from '@grpc/grpc-js';
+import { randomUUID } from 'node:crypto';
+import * as bcrypt from 'bcryptjs';
+import { PrismaService } from '../prisma/prisma.service';
+import { ValkeyService } from '../session/valkey.service';
+
+const fail = (code: number, message: string): never => { throw new RpcException({ code, message }); };
+const SESSION_SECONDS = 3600;
+
+@Injectable()
+export class AuthService {
+  private readonly jwt: JwtService;
+  private readonly dummyHash = bcrypt.hashSync('invalid-credential-placeholder', 12);
+  constructor(private readonly prisma: PrismaService, private readonly sessions: ValkeyService) {
+    const secret = process.env.JWT_SECRET;
+    if (!secret || secret.length < 32) throw new Error('JWT_SECRET must contain at least 32 characters.');
+    this.jwt = new JwtService({ secret, signOptions: { algorithm: 'HS256', issuer: 'shop-auth', audience: 'shop-app' } });
+  }
+  private email(value: unknown) {
+    if (typeof value !== 'string') fail(status.INVALID_ARGUMENT, 'Enter a valid email address.');
+    const email = (value as string).trim().toLowerCase();
+    if (email.length > 255 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) fail(status.INVALID_ARGUMENT, 'Enter a valid email address.');
+    return email;
+  }
+  private name(value: unknown) {
+    if (typeof value !== 'string') fail(status.INVALID_ARGUMENT, 'Enter your full name.');
+    const name = (value as string).trim().replace(/\s+/g, ' ');
+    if (!name || name.length > 128 || /[\x00-\x1f\x7f]/.test(name)) fail(status.INVALID_ARGUMENT, 'Full name must contain 1–128 characters.');
+    return name;
+  }
+  private password(value: unknown, registering = false) {
+    if (typeof value !== 'string' || Buffer.byteLength(value) > 72 || !value.length || (registering && [...value].length < 8)) {
+      fail(status.INVALID_ARGUMENT, registering ? 'Password must be at least 8 characters and at most 72 bytes.' : 'Invalid password.');
+    }
+    return value as string;
+  }
+  private profile(user: any) {
+    return { id: user.id, email: user.email, full_name: user.fullName, role: user.role, shop_id: user.shopId ?? '', status: user.status };
+  }
+  private async issue(user: any) {
+    const jti = randomUUID();
+    const token = this.jwt.sign({ sub: user.id, role: user.role, shopId: user.shopId ?? '', sessionVersion: user.sessionVersion, jti }, { expiresIn: SESSION_SECONDS });
+    await this.sessions.saveSession(jti, user.id, SESSION_SECONDS);
+    return { access_token: token, user_id: user.id, role: user.role, shop_id: user.shopId ?? '', user: this.profile(user) };
+  }
+  async register(data: any) {
+    const email = this.email(data.email);
+    const fullName = this.name(data.full_name);
+    const password = this.password(data.password, true);
+    await this.sessions.limit('register', email, 10, 900);
+    const passwordHash = await bcrypt.hash(password, 12);
+    try {
+      const user = await this.prisma.user.create({ data: { email, fullName, passwordHash, role: 'CUSTOMER' } });
+      // Registration creates an account only. Authentication issues the session.
+      return { access_token: '', user_id: user.id, role: user.role, shop_id: user.shopId ?? '', user: this.profile(user) };
+    } catch (error) {
+      if ((error as any).code === 'P2002') fail(status.ALREADY_EXISTS, 'An account with this email already exists.');
+      throw error;
+    }
+  }
+  async authenticate(data: any) {
+    const email = this.email(data.email);
+    const password = this.password(data.password);
+    await this.sessions.limit('login', email, 20, 900);
+    const user = await this.prisma.user.findUnique({ where: { email } });
+    const matches = await bcrypt.compare(password, user?.passwordHash ?? this.dummyHash);
+    if (!user || !matches || user.status !== 'ACTIVE') fail(status.UNAUTHENTICATED, 'Email or password is incorrect.');
+    return this.issue(user);
+  }
+  private async current(token: string) {
+    let payload: any;
+    try {
+      payload = this.jwt.verify(token, { algorithms: ['HS256'], issuer: 'shop-auth', audience: 'shop-app' });
+      if (!payload.sub || !payload.jti) throw new Error();
+    } catch { fail(status.UNAUTHENTICATED, 'Please sign in again.'); }
+    if (!await this.sessions.isSessionValid(payload.jti, payload.sub)) fail(status.UNAUTHENTICATED, 'Please sign in again.');
+    const user = await this.prisma.user.findUnique({ where: { id: payload.sub } });
+    if (!user || user.status !== 'ACTIVE' || (payload.sessionVersion ?? 0) !== user.sessionVersion) return fail(status.UNAUTHENTICATED, 'Please sign in again.');
+    return { user, jti: payload.jti };
+  }
+  async validateToken({ token }: any) {
+    try {
+      const { user } = await this.current(token);
+      return { is_valid: true, user_id: user.id, role: user.role, shop_id: user.shopId ?? '' };
+    } catch (error) {
+      if (error instanceof RpcException && (error.getError() as any).code === status.UNAUTHENTICATED) return { is_valid: false };
+      throw error;
+    }
+  }
+  async getProfile({ token }: any) { return this.profile((await this.current(token)).user); }
+  async updateProfile({ token, full_name }: any) {
+    const { user } = await this.current(token);
+    const updated = await this.prisma.user.update({ where: { id: user.id }, data: { fullName: this.name(full_name) } });
+    return this.profile(updated);
+  }
+  async logout({ token }: any) {
+    const { jti } = await this.current(token);
+    await this.sessions.revokeSession(jti);
+    return { success: true };
+  }
+  private async administrator(token: string) {
+    const { user } = await this.current(token);
+    if (user.role !== 'ADMIN') fail(status.PERMISSION_DENIED, 'Administrator access is required.');
+    return user;
+  }
+  private uuid(value: unknown) {
+    if (typeof value !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value)) fail(status.INVALID_ARGUMENT, 'Invalid account ID.');
+    return value as string;
+  }
+  private pagination(data: any) {
+    const page = data.page || 1, limit = data.limit || 20;
+    if (!Number.isInteger(page) || page < 1 || page > 100000 || !Number.isInteger(limit) || limit < 1 || limit > 50) fail(status.INVALID_ARGUMENT, 'Invalid page or page size.');
+    return { page, limit };
+  }
+  async adminUsers(data: any) {
+    await this.administrator(data.token);
+    const { page, limit } = this.pagination(data);
+    const search = (data.search || '').trim();
+    if (search.length > 128) fail(status.INVALID_ARGUMENT, 'Search must be at most 128 characters.');
+    if (data.role && !['CUSTOMER', 'SHOPKEEPER', 'ADMIN'].includes(data.role)) fail(status.INVALID_ARGUMENT, 'Invalid role filter.');
+    if (data.status && !['ACTIVE', 'SUSPENDED'].includes(data.status)) fail(status.INVALID_ARGUMENT, 'Invalid status filter.');
+    const where: any = { ...(data.role ? { role: data.role } : {}), ...(data.status ? { status: data.status } : {}), ...(search ? { OR: [{ fullName: { contains: search, mode: 'insensitive' } }, { email: { contains: search, mode: 'insensitive' } }] } : {}) };
+    const [users, total] = await this.prisma.$transaction([
+      this.prisma.user.findMany({ where, orderBy: [{ fullName: 'asc' }, { id: 'asc' }], skip: (page - 1) * limit, take: limit }),
+      this.prisma.user.count({ where }),
+    ], { isolationLevel: 'RepeatableRead' });
+    return { users: users.map(user => this.profile(user)), total, page, limit };
+  }
+  async adminUser(data: any) {
+    await this.administrator(data.token);
+    const user = await this.prisma.user.findUnique({ where: { id: this.uuid(data.id) } });
+    if (!user) return fail(status.NOT_FOUND, 'Account not found.');
+    return this.profile(user);
+  }
+  async adminOverview({ token }: any) {
+    await this.administrator(token);
+    const [customers, sellers, admins, suspended] = await this.prisma.$transaction([
+      this.prisma.user.count({ where: { role: 'CUSTOMER' } }), this.prisma.user.count({ where: { role: 'SHOPKEEPER' } }),
+      this.prisma.user.count({ where: { role: 'ADMIN' } }), this.prisma.user.count({ where: { status: 'SUSPENDED' } }),
+    ], { isolationLevel: 'RepeatableRead' });
+    return { customers, sellers, admins, suspended };
+  }
+  async adminSetStatus(data: any) {
+    const actor = await this.administrator(data.token);
+    const id = this.uuid(data.id);
+    if (!['ACTIVE', 'SUSPENDED'].includes(data.status) || !['ACTIVE', 'SUSPENDED'].includes(data.expected_status)) fail(status.INVALID_ARGUMENT, 'Invalid account status.');
+    const reason = (data.reason || '').trim();
+    if (reason.length < 5 || reason.length > 500 || /[\x00-\x1f\x7f]/.test(reason)) fail(status.INVALID_ARGUMENT, 'Provide a reason of 5–500 characters.');
+    const updated = await this.prisma.$transaction(async tx => {
+      // Serialize access changes, including last-admin checks, across service replicas.
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(72015001)`;
+      const currentActor = await tx.user.findUnique({ where: { id: actor.id } });
+      if (!currentActor || currentActor.role !== 'ADMIN' || currentActor.status !== 'ACTIVE' || currentActor.sessionVersion !== actor.sessionVersion) return fail(status.UNAUTHENTICATED, 'Please sign in again.');
+      const target = await tx.user.findUnique({ where: { id } });
+      if (!target) return fail(status.NOT_FOUND, 'Account not found.');
+      if (id === actor.id) return fail(status.PERMISSION_DENIED, 'You cannot change your own account access.');
+      if (target.status === data.status) return target; // Safe replay; no duplicate audit or version bump.
+      if (target.status !== data.expected_status) return fail(status.ABORTED, 'Account changed. Refresh its details and try again.');
+      if (target.role === 'ADMIN' && data.status === 'SUSPENDED' && await tx.user.count({ where: { role: 'ADMIN', status: 'ACTIVE' } }) <= 1) return fail(status.FAILED_PRECONDITION, 'The last active administrator cannot be suspended.');
+      const user = await tx.user.update({ where: { id }, data: { status: data.status, sessionVersion: { increment: 1 } } });
+      await tx.adminAuditEvent.create({ data: { actorId: actor.id, actorName: currentActor.fullName, targetId: id, targetEmail: target.email, action: data.status === 'SUSPENDED' ? 'ACCOUNT_SUSPENDED' : 'ACCOUNT_REACTIVATED', reason, previousStatus: target.status, newStatus: data.status } });
+      return user;
+    });
+    return this.profile(updated);
+  }
+  async adminActivity(data: any) {
+    await this.administrator(data.token);
+    const { page, limit } = this.pagination(data);
+    const [events, total] = await this.prisma.$transaction([
+      this.prisma.adminAuditEvent.findMany({ orderBy: [{ createdAt: 'desc' }, { id: 'desc' }], skip: (page - 1) * limit, take: limit }),
+      this.prisma.adminAuditEvent.count(),
+    ], { isolationLevel: 'RepeatableRead' });
+    return { events: events.map(e => ({ id: e.id, actor_id: e.actorId, actor_name: e.actorName, target_id: e.targetId, target_email: e.targetEmail, action: e.action, reason: e.reason, previous_status: e.previousStatus, new_status: e.newStatus, created_at: e.createdAt.toISOString() })), total, page, limit };
+  }
+  async adminHealth({ token }: any) {
+    await this.administrator(token);
+    await this.prisma.$queryRaw`SELECT 1`;
+    return { checked_at: new Date().toISOString(), database: true, sessions: await this.sessions.ping() };
+  }
+
+}

@@ -5,6 +5,16 @@ option go_package = "github.com/platform/gen/authv1";
 service AuthService {
   rpc Authenticate (AuthRequest) returns (AuthResponse);
   rpc ValidateToken (ValidateTokenRequest) returns (ValidateTokenResponse);
+  rpc Register (RegisterRequest) returns (AuthResponse);
+  rpc GetProfile (ValidateTokenRequest) returns (UserProfile);
+  rpc UpdateProfile (UpdateProfileRequest) returns (UserProfile);
+  rpc AdminUsers (AdminUsersRequest) returns (AdminUsersResponse);
+  rpc AdminUser (AdminUserRequest) returns (UserProfile);
+  rpc AdminSetStatus (AdminStatusRequest) returns (UserProfile);
+  rpc AdminOverview (ValidateTokenRequest) returns (AdminOverviewResponse);
+  rpc AdminActivity (AdminActivityRequest) returns (AdminActivityResponse);
+  rpc AdminHealth (ValidateTokenRequest) returns (AdminHealthResponse);
+  rpc Logout (ValidateTokenRequest) returns (LogoutResponse);
 }
 
 message AuthRequest {
@@ -13,6 +23,7 @@ message AuthRequest {
 }
 
 message AuthResponse {
+  UserProfile user = 5;
   string access_token = 1;
   string user_id = 2;
   string role = 3; // CUSTOMER, SHOPKEEPER, ADMIN
@@ -29,3 +40,19 @@ message ValidateTokenResponse {
   string role = 3;
   string shop_id = 4;
 }
+
+// Additive extensions: preserve the original package, methods and field numbers.
+message RegisterRequest { string email = 1; string password = 2; string full_name = 3; }
+message UserProfile { string id = 1; string email = 2; string full_name = 3; string role = 4; string shop_id = 5; string status = 6; }
+message UpdateProfileRequest { string token = 1; string full_name = 2; }
+message LogoutResponse { bool success = 1; }
+
+message AdminUsersRequest { string token = 1; string search = 2; string role = 3; string status = 4; int32 page = 5; int32 limit = 6; }
+message AdminUsersResponse { repeated UserProfile users = 1; int32 total = 2; int32 page = 3; int32 limit = 4; }
+message AdminUserRequest { string token = 1; string id = 2; }
+message AdminStatusRequest { string token = 1; string id = 2; string status = 3; string reason = 4; string expected_status = 5; }
+message AdminOverviewResponse { int32 customers = 1; int32 sellers = 2; int32 admins = 3; int32 suspended = 4; }
+message AdminActivityRequest { string token = 1; int32 page = 2; int32 limit = 3; }
+message AdminAuditEvent { string id = 1; string actor_id = 2; string actor_name = 3; string target_id = 4; string target_email = 5; string action = 6; string reason = 7; string previous_status = 8; string new_status = 9; string created_at = 10; }
+message AdminActivityResponse { repeated AdminAuditEvent events = 1; int32 total = 2; int32 page = 3; int32 limit = 4; }
+message AdminHealthResponse { string checked_at = 1; bool database = 2; bool sessions = 3; }

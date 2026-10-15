@@ -25,6 +25,9 @@ out/
 build
 dist
 
+# Generated Auth Prisma Client
+/apps/auth-service/generated/
+
 # Debug
 npm-debug.log*
 yarn-debug.log*
@@ -38,3 +41,25 @@ yarn-error.log*
 *.srl
 infra/certs/*
 !infra/certs/.gitkeep
+
+# Local verification screenshots
+/apps/auth-service/test-artifacts/
+
+/apps/frontend/.next-test/
+
+/apps/frontend/.next-production-check/
+
+# Local frontend previews and browser evidence
+/apps/frontend/.next-*/
+/test-artifacts/frontend/
+/apps/frontend/test-results/
+/apps/frontend/playwright-report/
+/docs
+docs/FRONTEND_PROPOSED_CONTRACTS.md
+docs/AUTH_VERIFICATION.md
+docs/CATALOG_SHOP_HANDOFF.md
+docs/DATABASE_DATA_GUIDE.md
+docs/FRONTEND_BUILD_PROMPT.md
+docs/FRONTEND_INTEGRATION.md
+
+apps/frontend/AGENTS.md

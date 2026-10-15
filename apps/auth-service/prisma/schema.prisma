@@ -4,18 +4,13 @@
 // Database-per-service pattern (ARCHITECTURE.md Section 7.1).
 // Connects to PostgreSQL database: ecommerce_auth_db.
 // 
-// TODO: [Intern Task - Database Models]
-// 1. Configure datasource with provider = "postgresql" and env("DATABASE_URL").
-// 2. Define User model matching auth_db DDL:
-//    - id: UUID @id @default(uuid())
-//    - email: String @unique
-//    - passwordHash: String @map("password_hash")
-//    - role: String (ADMIN | SHOPKEEPER | CUSTOMER)
-//    - fullName: String @map("full_name")
-//    - shopId: String? @map("shop_id")
+// User matches the existing users table in infra/postgres/schema-init.sql.
+// PostgreSQL generates UUIDs; fullName maps to the single full_name column.
+// Allowed roles and registration permissions must be enforced by application code.
 
 generator client {
   provider = "prisma-client-js"
+  output   = "../generated/prisma"
 }
 
 datasource db {
@@ -24,12 +19,32 @@ datasource db {
 }
 
 model User {
-  id           String  @id @default(uuid())
-  email        String  @unique
-  passwordHash String  @map("password_hash")
-  role         String  // 'ADMIN', 'SHOPKEEPER', 'CUSTOMER'
-  fullName     String  @map("full_name")
-  shopId       String? @map("shop_id")
+  id           String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  email        String  @unique @db.VarChar(255)
+  passwordHash String  @map("password_hash") @db.VarChar(255)
+  role         String  @db.VarChar(32)
+  fullName     String  @map("full_name") @db.VarChar(128)
+  shopId       String? @map("shop_id") @db.Uuid
 
+  status String @default("ACTIVE") @db.VarChar(16)
+  sessionVersion Int @default(0) @map("session_version")
+
+  @@index([role, status, id], map: "users_role_status_id_idx")
   @@map("users")
+}
+
+model AdminAuditEvent {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  actorId String @map("actor_id") @db.Uuid
+  actorName String @map("actor_name") @db.VarChar(128)
+  targetId String @map("target_id") @db.Uuid
+  targetEmail String @map("target_email") @db.VarChar(255)
+  action String @db.VarChar(48)
+  reason String @db.VarChar(500)
+  previousStatus String @map("previous_status") @db.VarChar(16)
+  newStatus String @map("new_status") @db.VarChar(16)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([createdAt(sort: Desc), id], map: "admin_audit_created_id_idx")
+  @@map("admin_audit_events")
 }
