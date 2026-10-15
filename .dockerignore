@@ -1,0 +1,9 @@
+**/node_modules
+**/dist
+.git
+*.log
+Dockerfile*
+docker-compose*
+AGENTS.md
+kilo.json
+.env

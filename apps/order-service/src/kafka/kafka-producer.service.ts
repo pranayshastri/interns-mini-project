@@ -1,16 +1,53 @@
-/**
- * Apache Kafka Producer Service (KRaft Mode)
- * 
- * ARCHITECTURE ROLE:
- * - Publishes reliable events to Kafka broker (KRaft mode, topic: shop.orders.v1)
- * - Used exclusively by the Outbox Poller Worker (never directly in the API handler)
- * 
- * TODO: [Intern Task - Kafka Producer]
- * 1. Initialize KafkaJS client pointing to process.env.KAFKA_BROKERS || 'localhost:9092'.
- * 2. Create producer instance: `this.kafka.producer()`.
- * 3. On onModuleInit(), call `await this.producer.connect()`.
- * 4. Implement `publishOrderEvent(topic: string, key: string, payload: any, headers?: Record<string, string>): Promise<void>`:
- *    - Send message with partition key (aggregateId / order_id) to maintain partition order.
- *    - Attach headers: event_id, event_type ('OrderCreated').
- * 5. On onModuleDestroy(), call `await this.producer.disconnect()`.
- */
+﻿import {
+  Injectable,
+  OnModuleDestroy,
+  OnModuleInit,
+} from '@nestjs/common';
+import { Kafka, Producer } from 'kafkajs';
+
+@Injectable()
+export class KafkaProducerService
+  implements OnModuleInit, OnModuleDestroy
+{
+  private readonly kafka = new Kafka({
+    clientId: 'order-service',
+    brokers: (process.env.KAFKA_BROKERS ?? 'localhost:9094')
+      .split(',')
+      .map((broker) => broker.trim())
+      .filter(Boolean),
+  });
+
+  private readonly producer: Producer = this.kafka.producer();
+
+  async onModuleInit(): Promise<void> {
+    await this.producer.connect();
+    console.log('Order Service connected to Kafka');
+  }
+
+  async publishOrderEvent(
+    topic: string,
+    key: string,
+    payload: unknown,
+    headers: Record<string, string> = {},
+  ): Promise<void> {
+    await this.producer.send({
+      topic,
+      messages: [
+        {
+          key,
+          value: JSON.stringify(payload),
+          headers: Object.fromEntries(
+            Object.entries(headers).map(([name, value]) => [
+              name,
+              Buffer.from(value),
+            ]),
+          ),
+        },
+      ],
+    });
+  }
+
+  async onModuleDestroy(): Promise<void> {
+    await this.producer.disconnect();
+  }
+}

@@ -1,17 +1,38 @@
-/**
- * gRPC Controller for InventoryService
- * 
- * ARCHITECTURE ROLE:
- * - Implements protobuf service `shop.inventory.v1.InventoryService` (proto/inventory.proto)
- * 
- * TODO: [Intern Task - gRPC Inventory Controller]
- * 1. Annotate class with @Controller().
- * 2. Implement @GrpcMethod('InventoryService', 'GetStock'):
- *    - Receives GetStockRequest: { product_id }.
- *    - Delegates to inventoryService.getStock(product_id).
- *    - Returns StockResponse: { product_id, available_stock }.
- * 3. Implement @GrpcMethod('InventoryService', 'UpdateStock'):
- *    - Receives UpdateStockRequest: { product_id, delta }.
- *    - Delegates to inventoryService.updateStock(product_id, delta).
- *    - Returns StockResponse: { product_id, available_stock }.
- */
+import { Controller } from '@nestjs/common';
+import { GrpcMethod } from '@nestjs/microservices';
+import { InventoryService } from './inventory.service';
+
+@Controller()
+export class InventoryController {
+  constructor(private readonly inventoryService: InventoryService) {}
+
+  @GrpcMethod('InventoryService', 'GetStock')
+  async getStock(request: { product_id: string }): Promise<{
+    product_id: string;
+    available_stock: number;
+  }> {
+    const result = await this.inventoryService.getStock(request.product_id);
+    return {
+      product_id: result.productId,
+      available_stock: result.availableStock,
+    };
+  }
+
+  @GrpcMethod('InventoryService', 'UpdateStock')
+  async updateStock(request: {
+    product_id: string;
+    delta: number;
+  }): Promise<{
+    product_id: string;
+    available_stock: number;
+  }> {
+    const result = await this.inventoryService.updateStock(
+      request.product_id,
+      request.delta,
+    );
+    return {
+      product_id: result.productId,
+      available_stock: result.availableStock,
+    };
+  }
+}

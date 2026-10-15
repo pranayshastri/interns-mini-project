@@ -5,6 +5,7 @@ COPY turbo.json ./
 COPY packages ./packages
 COPY apps/inventory-service ./apps/inventory-service
 RUN npm install
+RUN npx prisma generate --schema=apps/inventory-service/prisma/schema.prisma
 RUN npm run build --workspace=inventory-service
 
 FROM node:24-alpine AS runner

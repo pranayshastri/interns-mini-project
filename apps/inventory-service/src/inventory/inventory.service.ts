@@ -1,16 +1,61 @@
-/**
- * InventoryService Business Logic
- * 
- * ARCHITECTURE ROLE:
- * - Manages product available stock in PostgreSQL `inventory_db` using Prisma ORM
- * 
- * TODO: [Intern Task - Inventory Business Logic]
- * 1. Inject PrismaService.
- * 2. Implement `getStock(productId: string)`:
- *    - Query product inventory: `this.prisma.productInventory.findUnique({ where: { productId } })`.
- *    - Return availableStock or 0 if not found.
- * 3. Implement `updateStock(productId: string, delta: number)`:
- *    - Execute atomic stock increment/decrement:
- *      `this.prisma.productInventory.upsert({ where: { productId }, update: { availableStock: { increment: delta } }, create: { productId, availableStock: delta } })`.
- *    - Return updated stock.
- */
+import { Injectable, Logger } from '@nestjs/common';
+import { PrismaService } from '../prisma/prisma.service';
+import { RpcException } from '@nestjs/microservices';
+import { status as grpcStatus } from '@grpc/grpc-js';
+
+@Injectable()
+export class InventoryService {
+  private readonly logger = new Logger(InventoryService.name);
+
+  constructor(private readonly prisma: PrismaService) {}
+
+  async getStock(productId: string): Promise<{
+    productId: string;
+    availableStock: number;
+  }> {
+    const inventory = await this.prisma.productInventory.findUnique({
+      where: { productId },
+    });
+
+    const availableStock = inventory ? Number(inventory.availableStock) : 0;
+
+    return {
+      productId,
+      availableStock,
+    };
+  }
+
+  async updateStock(productId: string, delta: number): Promise<{
+    productId: string;
+    availableStock: number;
+  }> {
+    try {
+      const updated = await this.prisma.productInventory.upsert({
+        where: { productId },
+        create: {
+          productId,
+          availableStock: delta,
+        },
+        update: {
+          availableStock: {
+            increment: delta,
+          },
+        },
+      });
+
+      return {
+        productId,
+        availableStock: Number(updated.availableStock),
+      };
+    } catch (err) {
+      this.logger.error(
+        `UpdateStock failed for product ${productId} with delta ${delta}:`,
+        err instanceof Error ? err.stack : String(err),
+      );
+      throw new RpcException({
+        code: grpcStatus.NOT_FOUND,
+        message: `Product ${productId} not found or stock update failed`,
+      });
+    }
+  }
+}

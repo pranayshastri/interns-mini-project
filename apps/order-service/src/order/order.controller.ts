@@ -1,17 +1,43 @@
-/**
- * gRPC Controller for OrderService
- * 
- * ARCHITECTURE ROLE:
- * - Implements protobuf service `shop.order.v1.OrderService` (proto/order.proto)
- * 
- * TODO: [Intern Task - gRPC Order Controller]
- * 1. Annotate class with @Controller().
- * 2. Implement @GrpcMethod('OrderService', 'CreateOrder'):
- *    - Receives CreateOrderRequest: { customer_id, items, shipping_address }.
- *    - Delegates to orderService.createOrder(...).
- *    - Returns OrderResponse: { order_id, customer_id, status: 'PENDING', total_amount_cents, created_at }.
- * 3. Implement @GrpcMethod('OrderService', 'GetOrder'):
- *    - Receives GetOrderRequest: { order_id }.
- *    - Delegates to orderService.getOrder(order_id).
- *    - Returns OrderResponse.
- */
+import { Controller } from '@nestjs/common';
+import { GrpcMethod } from '@nestjs/microservices';
+import { OrderService } from './order.service';
+
+@Controller()
+export class OrderController {
+  constructor(private readonly orderService: OrderService) {}
+
+  @GrpcMethod('OrderService', 'CreateOrder')
+  async createOrder(data: {
+    customer_id: string;
+    items: {
+      product_id: string;
+      shop_id: string;
+      quantity: number;
+      unit_price_cents: string | number | bigint;
+    }[];
+    shipping_address: string;
+  }) {
+    const order = await this.orderService.createOrder(data);
+
+    return {
+      order_id: order.id,
+      customer_id: order.customerId,
+      status: order.status,
+      total_amount_cents: order.totalAmountCents.toString(),
+      created_at: BigInt(order.createdAt.getTime()).toString(),
+    };
+  }
+
+  @GrpcMethod('OrderService', 'GetOrder')
+  async getOrder(data: { order_id: string }) {
+    const order = await this.orderService.getOrder(data.order_id);
+
+    return {
+      order_id: order.id,
+      customer_id: order.customerId,
+      status: order.status,
+      total_amount_cents: order.totalAmountCents.toString(),
+      created_at: BigInt(order.createdAt.getTime()).toString(),
+    };
+  }
+}
