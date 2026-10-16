@@ -3,11 +3,192 @@ import { useCallback, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useApp } from '../../components/providers';
 import { Empty, ErrorState, Guard, Loading, Status, useResource } from '../../components/feedback/states';
-import { errorMessage } from '../../lib/contracts';
+import { useRouter } from 'next/navigation';
+import { useCart } from '../cart/cart-provider';
+import { errorMessage, money } from '../../lib/contracts';
+
 export function CheckoutPage() { return <Guard role="CUSTOMER"><Checkout/></Guard>; }
+
 function Checkout() {
-  return <Empty title="Checkout is currently unavailable" href="/cart" action="Back to your bag">Ordering and payments are not available yet. Your bag has not been submitted and no payment has been taken.</Empty>;
+  const { adapter } = useApp();
+  const cart = useCart();
+  const router = useRouter();
+
+  const load = useCallback(() => adapter!.products(), [adapter]);
+  const { data, loading, error, reload } = useResource(
+    load,
+    !!adapter && cart.ready,
+  );
+
+  const [shippingAddress, setShippingAddress] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [submitError, setSubmitError] = useState('');
+  const lock = useRef(false);
+
+  const lines = cart.items.map((item) => ({
+    ...item,
+    product: data?.find((p) => p.id === item.productId),
+  }));
+
+  const total = lines.reduce(
+    (sum, line) =>
+      sum + (line.product?.priceCents ?? 0) * line.quantity,
+    0,
+  );
+
+  const invalid = lines.some(({ product, quantity }) =>
+    !product ||
+    !product.shopId ||
+    !Number.isSafeInteger(product.priceCents) ||
+    product.priceCents < 0 ||
+    !Number.isInteger(quantity) ||
+    quantity <= 0 ||
+    quantity > product.availableStock
+  );
+
+  async function submit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!adapter || lock.current || invalid || !cart.items.length) return;
+
+    const address = shippingAddress.trim();
+
+    if (!address || address.length > 500) {
+      setSubmitError('Enter a shipping address of up to 500 characters.');
+      return;
+    }
+
+    if (!Number.isSafeInteger(total) || total < 0 || total > 2147483647) {
+      setSubmitError('The order total is outside the currently supported range.');
+      return;
+    }
+
+    lock.current = true;
+    setBusy(true);
+    setSubmitError('');
+
+    try {
+      const items = lines.map(({ productId, quantity, product }) => {
+        if (!product) throw new Error('A product is no longer available.');
+
+        return {
+          productId,
+          quantity,
+          shopId: product.shopId,
+          unitPriceCents: product.priceCents,
+        };
+      });
+
+      const order = await adapter.createOrder(items, address);
+
+      if (!order?.id) {
+        throw new Error('No order confirmation was returned by the service.');
+      }
+
+      cart.clear();
+      router.push(`/orders/${encodeURIComponent(order.id)}`);
+    } catch (e) {
+      setSubmitError(errorMessage(e));
+    } finally {
+      setBusy(false);
+      lock.current = false;
+    }
+  }
+
+  if (!cart.ready || loading) return <Loading />;
+
+  if (!cart.items.length) {
+    return (
+      <Empty title="Your cart is empty" href="/products" action="Browse products">
+        Add products to your bag before checking out.
+      </Empty>
+    );
+  }
+
+  if (error) return <ErrorState error={error} retry={reload} />;
+
+  if (!data) {
+    return (
+      <Empty title="Products are unavailable" href="/cart" action="Back to cart">
+        Current product details could not be loaded. Your bag has not been submitted.
+      </Empty>
+    );
+  }
+
+  return (
+    <div className="page-title">
+      <div>
+        <span className="eyebrow">ORDER DETAILS</span>
+        <h1>Checkout</h1>
+      </div>
+
+      <form className="panel stack" onSubmit={submit}>
+        <h2>Review your order</h2>
+
+        {lines.map(({ productId, quantity, product }) => (
+          <div className="summary-line" key={productId}>
+            <span>
+              {product?.name ?? 'Unavailable product'} × {quantity}
+            </span>
+            <strong>
+              {product
+                ? money(product.priceCents * quantity)
+                : 'Unavailable'}
+            </strong>
+          </div>
+        ))}
+
+        <hr />
+
+        <div className="summary-line total">
+          <span>Estimated total</span>
+          <strong>{money(total)}</strong>
+        </div>
+
+        {invalid && (
+          <p className="danger" role="alert">
+            A product is unavailable, its price is invalid, or stock has changed.
+            Return to your cart to review your items.
+          </p>
+        )}
+
+        <label htmlFor="shippingAddress">Shipping address</label>
+        <textarea
+          id="shippingAddress"
+          name="shippingAddress"
+          value={shippingAddress}
+          onChange={(event) => setShippingAddress(event.target.value)}
+          maxLength={500}
+          rows={4}
+          required
+          disabled={busy}
+          placeholder="Enter your delivery address"
+        />
+
+        {submitError && (
+          <p className="danger" role="alert">{submitError}</p>
+        )}
+
+        <button
+          className="button full"
+          type="submit"
+          disabled={busy || invalid || !shippingAddress.trim()}
+        >
+          {busy ? 'Submitting order…' : 'Place order'}
+        </button>
+
+        <p className="small muted">
+          This submits an order only. Payment is not processed by this checkout.
+        </p>
+
+        <Link className="text-link" href="/cart">
+          Back to cart
+        </Link>
+      </form>
+    </div>
+  );
 }
+
 export function CheckoutResult({ orderId }: { orderId: string }) { return <Guard role="CUSTOMER"><Result orderId={orderId}/></Guard>; }
 function Result({ orderId }: { orderId: string }) {
   const { adapter } = useApp(); const load = useCallback(() => adapter!.payment(orderId), [adapter, orderId]); const { data, error, loading, reload } = useResource(load, !!adapter && !!orderId); const lock = useRef(false); const [busy, setBusy] = useState(false); const [retryError, setRetryError] = useState('');
