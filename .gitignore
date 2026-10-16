@@ -63,3 +63,9 @@ docs/FRONTEND_BUILD_PROMPT.md
 docs/FRONTEND_INTEGRATION.md
 
 apps/frontend/AGENTS.md
+
+# Isolated commerce Prisma clients
+/apps/catalog-service/generated/
+/apps/order-service/generated/
+/apps/inventory-service/generated/
+TASKS.md

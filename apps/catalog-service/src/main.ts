@@ -1,19 +1,57 @@
-/**
- * NestJS Catalog Service - Main Entry Point
- * 
- * ARCHITECTURE ROLE:
- * - Internal gRPC Microservice running on Port 50052
- * - Secured using Mutual TLS (mTLS) with Root CA (ARCHITECTURE.md Section 5.3)
- * 
- * TODO: [Intern Task - gRPC Microservice Bootstrap with mTLS]
- * 1. Import NestFactory from '@nestjs/core' and AppModule from './app.module'.
- * 2. Configure microservice options using Transport.GRPC:
- *    - package: 'shop.catalog.v1'
- *    - protoPath: path to catalog.proto (from @repo/proto or ./proto/catalog.proto)
- *    - url: `0.0.0.0:${process.env.PORT || 50052}`
- * 3. Configure mTLS on the gRPC Server:
- *    - Load server certificate (catalog-service.crt) and key (catalog-service.key)
- *    - Load Root CA (ca.crt)
- *    - Set clientAuth to RequireAndVerifyClientCert (enforces mutual TLS identity verification)
- * 4. Call app.listen() and log startup message.
- */
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { ServerCredentials } from '@grpc/grpc-js';
+import { NestFactory } from '@nestjs/core';
+import {
+  MicroserviceOptions,
+  Transport,
+} from '@nestjs/microservices';
+import { PROTO_PATHS } from '@repo/proto';
+import { AppModule } from './app.module';
+
+async function bootstrap(): Promise<void> {
+  const certPath = process.env.TLS_CERT_PATH
+    ?? resolve(process.cwd(), 'infra/certs/catalog-service.crt');
+  const keyPath = process.env.TLS_KEY_PATH
+    ?? resolve(process.cwd(), 'infra/certs/catalog-service.key');
+  const caPath = process.env.TLS_CA_PATH
+    ?? resolve(process.cwd(), 'infra/certs/ca.crt');
+
+  const ca = readFileSync(caPath);
+  const cert = readFileSync(certPath);
+  const key = readFileSync(keyPath);
+
+  const credentials = ServerCredentials.createSsl(
+    ca,
+    [{ cert_chain: cert, private_key: key }],
+    true,
+  );
+
+  const port =
+    process.env.PORT ?? process.env.ORDER_SERVICE_PORT ?? '50052';
+
+  const app = await NestFactory.createMicroservice<MicroserviceOptions>(
+    AppModule,
+    {
+      transport: Transport.GRPC,
+      options: {
+         package: 'shop.catalog.v1',
+        protoPath: PROTO_PATHS.catalog,
+        url: `0.0.0.0:${port}`,
+        credentials,
+        loader: {
+        keepCase: true,
+        },
+      },
+    },
+  );
+
+  await app.listen();
+
+  console.log(`Catalog Service gRPC server listening on port ${port}`);
+}
+
+bootstrap().catch((error: unknown) => {
+  console.error('Failed to start Catalog Service:', error);
+  process.exitCode = 1;
+});

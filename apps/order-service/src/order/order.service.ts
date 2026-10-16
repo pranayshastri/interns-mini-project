@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { RpcException } from '@nestjs/microservices';
-import { Prisma } from '@prisma/client';
+import { Prisma } from '../../generated/prisma';
 import { PrismaService } from '../prisma/prisma.service';
 
 interface OrderItemInput {
@@ -17,9 +17,7 @@ interface CreateOrderInput {
 }
 
 function isValidUuid(value: string): boolean {
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
-    value,
-  );
+  return /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(value);
 }
 
 @Injectable()
@@ -30,7 +28,6 @@ export class OrderService {
     const { customer_id, items, shipping_address } = input;
 
     if (
-      !customer_id ||
       !isValidUuid(customer_id) ||
       !shipping_address?.trim() ||
       !Array.isArray(items) ||

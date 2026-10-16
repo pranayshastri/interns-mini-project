@@ -1,7 +1,7 @@
 
 import { Injectable, Logger } from '@nestjs/common';
 import { Interval } from '@nestjs/schedule';
-import { Prisma } from '@prisma/client';
+import { Prisma } from '../../generated/prisma';
 import { KafkaProducerService } from '../kafka/kafka-producer.service';
 import { PrismaService } from '../prisma/prisma.service';
 

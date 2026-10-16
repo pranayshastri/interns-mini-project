@@ -8,23 +8,19 @@ This document tracks the current progress, identified architectural issues, and 
 
 | Service / App | Branch / PR | Status | Author |
 | :--- | :--- | :--- | :--- |
-| **Auth Service & Frontend** | `feat/auth-service-mtls-bootstrap` (PR #5) | ✅ Approved — Ready for Ankit to merge | `@Ankitprajapati24` |
-| **Order Service (Outbox Pattern)** | `feature/aditi-order-service` (PR #1) | ⚠️ Merged into `service` branch (needs merge to `main`) | `@ADITI9981` |
-| **Inventory Service (Idempotent Consumer)** | `feat/inventory-service` (PR #3) | ⚠️ Merged into `service` branch (needs merge to `main`) | `@Aaron-Coutinho` |
-| **Catalog Service** | `main` | ⏳ Pending implementation | *Open for intern claim* |
-| **API Gateway (mTLS Resolvers)** | `main` | ⏳ Pending gRPC resolver wiring | *Open for intern claim* |
+| **Auth Service & Frontend** | `feat/auth-service-mtls-bootstrap` (PR #5) | ✅ Merged into main (PR #5) | `@Ankitprajapati24` |
+| **Order Service (Outbox Pattern)** | `feature/aditi-order-service` (PR #1) | ✅ Included in main via PR #4 | `@ADITI9981` |
+| **Inventory Service (Idempotent Consumer)** | `feat/inventory-service` (PR #3) | ✅ Included in main via PR #4 | `@Aaron-Coutinho` |
+| **Catalog Service** | `main` | Catalog reads implemented locally; product creation pending | *Open for intern claim* |
+| **API Gateway (mTLS Resolvers)** | `main` | Implemented locally; verified with mTLS integration tests | *Open for intern claim* |
 
 ---
 
 ## 🚨 Identified Issues & Action Items
 
 ### 1. [Critical] Merge `service` branch into `main` (Issue [#6](https://github.com/pranayshastri/interns-mini-project/issues/6))
-- **Problem:** PR #1 and PR #3 were merged into the `service` branch instead of `main`. The `main` branch does not yet contain the Order and Inventory service implementations.
-- **Action:**
-  1. Team Lead `@Ankitprajapati24` merges PR #5 into `main`.
-  2. Open a Pull Request from `service` into `main`.
-  3. Resolve any merge conflicts in `schema-init.sql` or `docker-compose.yml`.
-  4. Verify with `npm run build` that all services compile cleanly together on `main`.
+- **Verified 2026-10-16:** `service` has zero commits ahead of `main`; PR #4 already brought in Order and Inventory, and PR #5 is merged. A duplicate merge PR is unnecessary. GitHub issue #6 remains open.
+- **Validation:** Combined local working-tree build and `docker compose config --quiet` pass. These checks include local issue fixes; they are not a CI verdict on the remote main commit.
 
 ### 2. [Alignment] Synchronize Seed Product & Shop UUIDs (Issue [#7](https://github.com/pranayshastri/interns-mini-project/issues/7))
 - **Problem:** Seed UUIDs diverged between `schema-init.sql` (`p0000000...`) and test scripts / PR #5 (`e0000000...` and `d0000000...`).

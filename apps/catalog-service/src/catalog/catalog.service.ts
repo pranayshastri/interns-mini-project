@@ -1,22 +1,19 @@
-/**
- * CatalogService Business Logic
- * 
- * ARCHITECTURE ROLE:
- * - Queries and modifies products in PostgreSQL `catalog_db` using Prisma ORM
- * - Interacts with Valkey for read caching
- * 
- * TODO: [Intern Task - Catalog Business Logic]
- * 1. Inject PrismaService and ValkeyService.
- * 2. Implement `createProduct({ shop_id, name, description, price_cents, initial_stock })`:
- *    - Insert product into PostgreSQL using `this.prisma.product.create({ data: { shopId: shop_id, name, description, priceCents: BigInt(price_cents) } })`.
- *    - Invalidate Valkey cache for catalog listings.
- *    - Return product data with initial_stock.
- * 3. Implement `listProducts(page = 1, limit = 50)`:
- *    - Check Valkey cache first.
- *    - If cache miss: query `this.prisma.product.findMany({ skip: (page - 1) * limit, take: limit })`.
- *    - Save to Valkey cache.
- *    - Return product list.
- * 4. Implement `getProduct(productId)`:
- *    - Query `this.prisma.product.findUnique({ where: { id: productId } })`.
- *    - Return product details or throw NOT_FOUND exception.
- */
+import { Injectable } from '@nestjs/common';
+import { RpcException } from '@nestjs/microservices';
+import { PrismaService } from '../prisma/prisma.service';
+const validUuid = (s: string) => /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(s);
+const view = (p: any) => ({ id: p.id, shop_id: p.shopId, name: p.name, description: p.description, price_cents: p.priceCents.toString() });
+@Injectable()
+export class CatalogService {
+  constructor(private readonly prisma: PrismaService) {}
+  async listProducts({ page = 1, limit = 50 }: { page?: number; limit?: number }) {
+    if (!Number.isInteger(page) || page < 1 || !Number.isInteger(limit) || limit < 1 || limit > 100) throw new RpcException({ code: 3, message: 'Invalid pagination' });
+    return { products: (await this.prisma.product.findMany({ skip: (page - 1) * limit, take: limit, orderBy: { id: 'asc' } })).map(view) };
+  }
+  async getProduct(id: string) {
+    if (!validUuid(id)) throw new RpcException({ code: 3, message: 'A valid product UUID is required' });
+    const product = await this.prisma.product.findUnique({ where: { id } });
+    if (!product) throw new RpcException({ code: 5, message: 'Product not found' });
+    return view(product);
+  }
+}

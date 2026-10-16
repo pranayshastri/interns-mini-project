@@ -47,6 +47,36 @@
         "dist/**",
         "generated/prisma/**"
       ]
+    },
+    "catalog-service#build": {
+      "dependsOn": [
+        "^build"
+      ],
+      "cache": false,
+      "outputs": [
+        "dist/**",
+        "generated/prisma/**"
+      ]
+    },
+    "order-service#build": {
+      "dependsOn": [
+        "^build"
+      ],
+      "cache": false,
+      "outputs": [
+        "dist/**",
+        "generated/prisma/**"
+      ]
+    },
+    "inventory-service#build": {
+      "dependsOn": [
+        "^build"
+      ],
+      "cache": false,
+      "outputs": [
+        "dist/**",
+        "generated/prisma/**"
+      ]
     }
   },
   "globalEnv": [

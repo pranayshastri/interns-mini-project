@@ -2,6 +2,8 @@ import { Args, Context, Mutation, Query, Resolver } from '@nestjs/graphql';
 import { GraphQLError } from 'graphql';
 import { AuthClient } from '../grpc/auth-client.service';
 import { OrderClient } from '../grpc/order-client.service';
+import { CommerceClient } from '../grpc/commerce-client.service';
+import { badInput, uuid } from './commerce.types';
 
 export const orderTypeDefs = `
   type Order {
@@ -81,6 +83,7 @@ export class OrderResolver {
   constructor(
     private readonly orderClient: OrderClient,
     private readonly authClient: AuthClient,
+    private readonly commerce: CommerceClient,
   ) {}
 
   @Mutation('createOrder')
@@ -94,28 +97,31 @@ export class OrderResolver {
     // Resolve the customer from the authenticated server-side session.
     const user = await this.authClient.call('getProfile', { token });
 
-    if (user.role !== 'CUSTOMER') {
+    if (user.role !== 'CUSTOMER' || user.status !== 'ACTIVE') {
       throw new GraphQLError('Only customers can place orders.', {
         extensions: { code: 'FORBIDDEN' },
       });
     }
 
-    if (!Array.isArray(items) || items.length === 0) {
+    if (!Array.isArray(items) || items.length === 0 || items.length > 100) {
       throw new GraphQLError('An order must contain at least one item.', {
         extensions: { code: 'BAD_USER_INPUT' },
       });
     }
 
-    if (!shippingAddress?.trim()) {
+    if (!shippingAddress?.trim() || shippingAddress.length > 500) {
       throw new GraphQLError('Shipping address is required.', {
         extensions: { code: 'BAD_USER_INPUT' },
       });
     }
 
+    const seen = new Set<string>();
     for (const item of items) {
+      uuid(item.productId);
+      uuid(item.shopId);
+      if (seen.has(item.productId)) throw badInput('Each product may appear only once.');
+      seen.add(item.productId);
       if (
-        !item.productId ||
-        !item.shopId ||
         !Number.isInteger(item.quantity) ||
         item.quantity <= 0 ||
         !Number.isInteger(item.unitPriceCents) ||
@@ -127,14 +133,26 @@ export class OrderResolver {
       }
     }
 
+    // The browser's cart is a proposal. Re-read product and stock from their
+    // owners before creating the order; neither shop nor price is trusted.
+    const resolved = await Promise.all(items.map(async (item) => {
+      const [product, inventory] = await Promise.all([
+        this.commerce.call('catalog', 'getProduct', { product_id: item.productId }),
+        this.commerce.call('inventory', 'getStock', { product_id: item.productId }),
+      ]);
+      if (product.shop_id !== item.shopId || BigInt(product.price_cents) !== BigInt(item.unitPriceCents)) {
+        throw badInput('Product price or shop changed. Refresh your cart.');
+      }
+      if (inventory.available_stock < item.quantity) {
+        throw badInput('Product stock changed. Refresh your cart.');
+      }
+      return { product_id: product.id, shop_id: product.shop_id, quantity: item.quantity, unit_price_cents: product.price_cents };
+    }));
+    const total = resolved.reduce((sum, item) => sum + BigInt(item.unit_price_cents) * BigInt(item.quantity), 0n);
+    if (total > 2147483647n) throw badInput('Order total exceeds the supported checkout range.');
     const result = await this.orderClient.call('createOrder', {
       customer_id: user.id,
-      items: items.map((item) => ({
-        product_id: item.productId,
-        shop_id: item.shopId,
-        quantity: item.quantity,
-        unit_price_cents: item.unitPriceCents,
-      })),
+      items: resolved,
       shipping_address: shippingAddress.trim(),
     });
 
@@ -150,7 +168,7 @@ export class OrderResolver {
     const user = await this.authClient.call('getProfile', { token });
 
     const result = await this.orderClient.call('getOrder', {
-      order_id: id,
+      order_id: uuid(id),
     });
 
     // Prevent customers from viewing another customer's order.

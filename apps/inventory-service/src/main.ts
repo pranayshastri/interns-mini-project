@@ -9,7 +9,6 @@ import {
   ServerCredentials,
 } from '@grpc/grpc-js';
 import {
-  existsSync,
   readFileSync,
 } from 'fs';
 import {
@@ -27,31 +26,12 @@ async function bootstrap(): Promise<void> {
   const caPath =
     process.env.TLS_CA_PATH || './infra/certs/ca.crt';
 
-  let credentials: ServerCredentials;
-
-  if (
-    existsSync(certPath) &&
-    existsSync(keyPath) &&
-    existsSync(caPath)
-  ) {
-    const caCert = readFileSync(caPath);
-    const serverCert = readFileSync(certPath);
-    const serverKey = readFileSync(keyPath);
-
-    credentials = ServerCredentials.createSsl(
-      caCert,
-      [{ private_key: serverKey, cert_chain: serverCert }],
-      true,
-    );
-    console.log(
-      'mTLS enabled — Inventory Service requires and verifies client certificates',
-    );
-  } else {
-    console.warn(
-      'mTLS certificates not found — falling back to insecure gRPC (development only)',
-    );
-    credentials = ServerCredentials.createInsecure();
-  }
+  // Refuse startup without the server identity; plaintext is never a fallback.
+  const credentials = ServerCredentials.createSsl(
+    readFileSync(caPath),
+    [{ private_key: readFileSync(keyPath), cert_chain: readFileSync(certPath) }],
+    true,
+  );
 
   const app =
     await NestFactory.createMicroservice<MicroserviceOptions>(AppModule, {

@@ -11,7 +11,7 @@ export function liveAdapter(config: Config): CommerceAdapter {
   }
   return {
     async products() { requireCapability('products'); return (await accountRequest<{ products: Product[] }>(`query { products { ${productFields} } }`)).products; },
-    product: unavailable,
+    async product(id) { requireCapability('product'); return (await accountRequest<{ product: Product }>(`query($id:ID!){product(id:$id){${productFields}}}`, { id })).product; },
     async stock(id) { requireCapability('stock'); return (await accountRequest<{ stock: number }>('query($id:ID!){stock(productId:$id)}', { id })).stock; },
     myProducts: unavailable,
     async createProduct(input) { requireCapability('createProduct'); return (await accountRequest<{ createProduct: Product }>(`mutation($name:String!,$description:String!,$priceCents:Int!,$initialStock:Int!){createProduct(name:$name,description:$description,priceCents:$priceCents,initialStock:$initialStock){${productFields}}}`, { ...input })).createProduct; },

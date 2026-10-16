@@ -1,19 +1,10 @@
-/**
- * mTLS gRPC Client Credentials Factory
- * 
- * ARCHITECTURE ROLE:
- * - Implements Zero-Trust Security Pillar (ARCHITECTURE.md Section 5)
- * - The API Gateway must initiate gRPC calls over Mutual TLS (mTLS)
- * 
- * TODO: [Intern Task - mTLS Credentials Configuration]
- * 1. Read TLS file paths from environment variables:
- *    - TLS_CA_PATH (ca.crt)
- *    - TLS_CERT_PATH (api-gateway.crt)
- *    - TLS_KEY_PATH (api-gateway.key)
- * 2. If certificates exist on filesystem (from ./infra/certs/):
- *    - Read ca.crt, api-gateway.crt, and api-gateway.key via fs.readFileSync()
- *    - Return grpc.credentials.createSsl(rootCert, clientKey, clientCert)
- * 3. If certificates do not exist (during early dev before ./scripts/generate-certs.sh runs):
- *    - Log a warning and fallback to grpc.credentials.createInsecure()
- * 4. Export helper getGrpcCredentials(serviceName: string): grpc.ChannelCredentials
- */
+import { credentials } from '@grpc/grpc-js';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+
+// Fail closed: a gateway without its client identity must never use plaintext.
+export function getGrpcCredentials() {
+  const dir = process.env.TLS_CERT_DIR || resolve(__dirname, '../../../../infra/certs');
+  const cert = (override: string | undefined, name: string) => readFileSync(override || resolve(dir, name));
+  return credentials.createSsl(cert(process.env.TLS_CA_PATH, 'ca.crt'), cert(process.env.TLS_KEY_PATH, 'api-gateway.key'), cert(process.env.TLS_CERT_PATH, 'api-gateway.crt'));
+}

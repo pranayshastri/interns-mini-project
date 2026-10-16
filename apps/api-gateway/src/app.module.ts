@@ -6,11 +6,15 @@ import { AuthResolver, authTypeDefs } from './resolvers/auth.resolver';
 import { GraphqlRequestMiddleware } from './security/graphql-request.middleware';
 import { OrderClient } from './grpc/order-client.service';
 import { OrderResolver, orderTypeDefs } from './resolvers/order.resolver';
+import { CommerceClient } from './grpc/commerce-client.service';
+import { CatalogResolver } from './resolvers/catalog.resolver';
+import { InventoryResolver } from './resolvers/inventory.resolver';
+import { commerceTypeDefs } from './resolvers/commerce.types';
 
 @Module({
   imports: [GraphQLModule.forRoot<ApolloDriverConfig>({
     driver: ApolloDriver,
-    typeDefs: [authTypeDefs, orderTypeDefs],
+    typeDefs: [authTypeDefs, orderTypeDefs, commerceTypeDefs],
     playground: false,
     introspection: process.env.NODE_ENV !== 'production',
     csrfPrevention: true,
@@ -18,7 +22,7 @@ import { OrderResolver, orderTypeDefs } from './resolvers/order.resolver';
     context: ({ req, res }) => ({ req, res }),
     formatError: error => ({ message: error.extensions?.code === 'INTERNAL_SERVER_ERROR' ? 'Something went wrong. Please try again.' : error.message, extensions: { code: error.extensions?.code } }),
   })],
-  providers: [AuthClient, AuthResolver, OrderClient, OrderResolver],
+  providers: [AuthClient, AuthResolver, OrderClient, OrderResolver, CommerceClient, CatalogResolver, InventoryResolver],
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {

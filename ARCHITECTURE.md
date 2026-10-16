@@ -790,20 +790,20 @@ CREATE TABLE inbox_events (
 \c auth_db;
 INSERT INTO users (id, email, password_hash, role, full_name, shop_id) VALUES
 ('a0000000-0000-0000-0000-000000000001', 'admin@shopping.com', '$2a$10$7EqJtq98hPqEX7fNZaFWoO.eR8M1gN7aU5F3aHkP4.N4/M.b/Vn1y', 'ADMIN', 'Platform Admin', NULL),
-('b0000000-0000-0000-0000-000000000002', 'shopkeeper@gadgets.com', '$2a$10$7EqJtq98hPqEX7fNZaFWoO.eR8M1gN7aU5F3aHkP4.N4/M.b/Vn1y', 'SHOPKEEPER', 'John Merchant', 's0000000-0000-0000-0000-000000000001'),
+('b0000000-0000-0000-0000-000000000002', 'shopkeeper@gadgets.com', '$2a$10$7EqJtq98hPqEX7fNZaFWoO.eR8M1gN7aU5F3aHkP4.N4/M.b/Vn1y', 'SHOPKEEPER', 'John Merchant', 'd0000000-0000-0000-0000-000000000001'),
 ('c0000000-0000-0000-0000-000000000003', 'customer@gmail.com', '$2a$10$7EqJtq98hPqEX7fNZaFWoO.eR8M1gN7aU5F3aHkP4.N4/M.b/Vn1y', 'CUSTOMER', 'Alice Consumer', NULL)
 ON CONFLICT (email) DO NOTHING;
 
 -- Seed Initial Product in catalog_db
 \c catalog_db;
 INSERT INTO products (id, shop_id, name, description, price_cents) VALUES
-('p0000000-0000-0000-0000-000000000001', 's0000000-0000-0000-0000-000000000001', 'Mechanical Keyboard', 'RGB Hot-swappable Mechanical Keyboard', 8900)
+('e0000000-0000-0000-0000-000000000001', 'd0000000-0000-0000-0000-000000000001', 'Mechanical Keyboard', 'RGB Hot-swappable Mechanical Keyboard', 8900)
 ON CONFLICT (id) DO NOTHING;
 
 -- Seed Initial Inventory in inventory_db
 \c inventory_db;
 INSERT INTO product_inventory (product_id, available_stock) VALUES
-('p0000000-0000-0000-0000-000000000001', 50)
+('e0000000-0000-0000-0000-000000000001', 50)
 ON CONFLICT (product_id) DO NOTHING;
 ```
 
@@ -1130,7 +1130,7 @@ To successfully complete the project, developers must demonstrate the following 
 
 ### Lab 3: Duplicate Event Delivery & Idempotency Test
 *Objective: Prove that processing the same event twice does not double-deduct stock.*
-1. Note the current stock of product `p0000000-0000-0000-0000-000000000001` (e.g., 50 units).
+1. Note the current stock of product `e0000000-0000-0000-0000-000000000001` (e.g., 50 units).
 2. Publish an `OrderCreated` event to Kafka with quantity = 2.
 3. Verify stock drops to 48.
 4. Intentionally re-publish the **exact same event payload** (same `event_id`) to Kafka.

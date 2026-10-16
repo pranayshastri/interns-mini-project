@@ -7,7 +7,8 @@
     "lint": "turbo run lint",
     "format": "prettier --write \"**/*.{ts,tsx,md}\"",
     "check-types": "turbo run check-types",
-    "dev:auth": "node scripts/dev-auth.cjs"
+    "dev:auth": "node scripts/dev-auth.cjs",
+    "test:commerce": "npm run build --workspace=auth-service --workspace=catalog-service --workspace=order-service --workspace=inventory-service --workspace=api-gateway && node --test apps/api-gateway/test/commerce.integration.cjs"
   },
   "devDependencies": {
     "@playwright/test": "^1.64.0",
