@@ -175,6 +175,35 @@ export class AuthService {
     ], { isolationLevel: 'RepeatableRead' });
     return { events: events.map(e => ({ id: e.id, actor_id: e.actorId, actor_name: e.actorName, target_id: e.targetId, target_email: e.targetEmail, action: e.action, reason: e.reason, previous_status: e.previousStatus, new_status: e.newStatus, created_at: e.createdAt.toISOString() })), total, page, limit };
   }
+  async adminCreateSeller(data: any) {
+    const actor = await this.administrator(data.token);
+    const email = this.email(data.email), fullName = this.name(data.full_name);
+    const shopName = this.name(data.shop_name);
+    const description = (data.description || '').trim();
+    if (description.length > 1000 || /[\x00-\x1f\x7f]/.test(description)) fail(status.INVALID_ARGUMENT, 'Shop description must be at most 1000 characters without control characters.');
+    const passwordHash = await bcrypt.hash(this.password(data.password, true), 12);
+    try {
+      return await this.prisma.$transaction(async tx => {
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(72015001)`;
+        const currentActor = await tx.user.findUnique({ where: { id: actor.id } });
+        if (!currentActor || currentActor.role !== 'ADMIN' || currentActor.status !== 'ACTIVE' || currentActor.sessionVersion !== actor.sessionVersion) return fail(status.UNAUTHENTICATED, 'Please sign in again.');
+        const shopId = randomUUID();
+        const user = await tx.user.create({ data: { email, fullName, passwordHash, role: 'SHOPKEEPER', shopId } });
+        const shop = await tx.shop.create({ data: { id: shopId, ownerId: user.id, name: shopName, description } });
+        await tx.adminAuditEvent.create({ data: { actorId: actor.id, actorName: currentActor.fullName, targetId: user.id, targetEmail: email, action: 'SELLER_CREATED', reason: 'Seller account and shop created', previousStatus: '', newStatus: 'ACTIVE' } });
+        return { user: this.profile(user), shop: { id: shop.id, owner_id: shop.ownerId, name: shop.name, description: shop.description, created_at: shop.createdAt.toISOString() } };
+      });
+    } catch (error) {
+      if ((error as any).code === 'P2002') return fail(status.ALREADY_EXISTS, 'An account with this email already exists.');
+      throw error;
+    }
+  }
+  async adminShop(data: any) {
+    await this.administrator(data.token);
+    const shop = await this.prisma.shop.findUnique({ where: { id: this.uuid(data.id) } });
+    if (!shop) return fail(status.NOT_FOUND, 'Shop details are not registered in this account service.');
+    return { id: shop.id, owner_id: shop.ownerId, name: shop.name, description: shop.description, created_at: shop.createdAt.toISOString() };
+  }
   async adminHealth({ token }: any) {
     await this.administrator(token);
     await this.prisma.$queryRaw`SELECT 1`;

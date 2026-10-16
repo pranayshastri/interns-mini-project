@@ -48,3 +48,13 @@ model AdminAuditEvent {
   @@index([createdAt(sort: Desc), id], map: "admin_audit_created_id_idx")
   @@map("admin_audit_events")
 }
+
+// Administrative shop identity; catalog products remain Catalog-owned.
+model Shop {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  ownerId String @unique @map("owner_id") @db.Uuid
+  name String @db.VarChar(128)
+  description String @db.VarChar(1000)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  @@map("shops")
+}

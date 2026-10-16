@@ -444,7 +444,7 @@ export function AdminWorkspace({ preview = false }: { preview?: boolean }) {
           </footer>
         </div>
       </div>
-      <dialog
+      {preview && <dialog
         ref={dialog}
         className={styles.dialog}
         aria-labelledby="seller-title"
@@ -516,7 +516,7 @@ export function AdminWorkspace({ preview = false }: { preview?: boolean }) {
             </button>
           </div>
         </form>
-      </dialog>
+      </dialog>}
     </div>
   );
 }

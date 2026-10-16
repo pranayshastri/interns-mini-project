@@ -13,6 +13,8 @@ service AuthService {
   rpc AdminSetStatus (AdminStatusRequest) returns (UserProfile);
   rpc AdminOverview (ValidateTokenRequest) returns (AdminOverviewResponse);
   rpc AdminActivity (AdminActivityRequest) returns (AdminActivityResponse);
+  rpc AdminCreateSeller (AdminCreateSellerRequest) returns (AdminCreateSellerResponse);
+  rpc AdminShop (AdminUserRequest) returns (AdminShopResponse);
   rpc AdminHealth (ValidateTokenRequest) returns (AdminHealthResponse);
   rpc Logout (ValidateTokenRequest) returns (LogoutResponse);
 }
@@ -56,3 +58,7 @@ message AdminActivityRequest { string token = 1; int32 page = 2; int32 limit = 3
 message AdminAuditEvent { string id = 1; string actor_id = 2; string actor_name = 3; string target_id = 4; string target_email = 5; string action = 6; string reason = 7; string previous_status = 8; string new_status = 9; string created_at = 10; }
 message AdminActivityResponse { repeated AdminAuditEvent events = 1; int32 total = 2; int32 page = 3; int32 limit = 4; }
 message AdminHealthResponse { string checked_at = 1; bool database = 2; bool sessions = 3; }
+
+message AdminCreateSellerRequest { string token = 1; string email = 2; string password = 3; string full_name = 4; string shop_name = 5; string description = 6; }
+message AdminShopResponse { string id = 1; string owner_id = 2; string name = 3; string description = 4; string created_at = 5; }
+message AdminCreateSellerResponse { UserProfile user = 1; AdminShopResponse shop = 2; }

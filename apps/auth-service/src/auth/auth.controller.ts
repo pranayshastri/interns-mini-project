@@ -23,6 +23,8 @@ export class AuthController {
   @GrpcMethod('AuthService', 'AdminSetStatus') adminStatus(data: any) { return this.safe(() => this.auth.adminSetStatus(data)); }
   @GrpcMethod('AuthService', 'AdminOverview') adminOverview(data: any) { return this.safe(() => this.auth.adminOverview(data)); }
   @GrpcMethod('AuthService', 'AdminActivity') adminActivity(data: any) { return this.safe(() => this.auth.adminActivity(data)); }
+  @GrpcMethod('AuthService', 'AdminCreateSeller') adminCreateSeller(data: any) { return this.safe(() => this.auth.adminCreateSeller(data)); }
+  @GrpcMethod('AuthService', 'AdminShop') adminShop(data: any) { return this.safe(() => this.auth.adminShop(data)); }
   @GrpcMethod('AuthService', 'AdminHealth') adminHealth(data: any) { return this.safe(() => this.auth.adminHealth(data)); }
   @GrpcMethod('AuthService', 'Logout') logout(data: any) { return this.safe(() => this.auth.logout(data)); }
 }

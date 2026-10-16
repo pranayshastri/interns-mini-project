@@ -12,7 +12,7 @@ async function main() {
   const url = template.replace(/\$\{(\w+)\}/g, (_, key) => { if (!settings[key]) throw new Error(`Missing database setting ${key}.`); return settings[key]; });
   const db = new PrismaClient({ datasourceUrl: url });
   try {
-    const sql = readFileSync(resolve(__dirname, '../prisma/migrations/20261015_admin_accounts/migration.sql'), 'utf8');
+    const sql = ['20261015_admin_accounts', '20261015_admin_shops'].map(name => readFileSync(resolve(__dirname, `../prisma/migrations/${name}/migration.sql`), 'utf8')).join('\n');
     await db.$transaction(async tx => { for (const statement of sql.split(';').filter(s => s.trim())) await tx.$executeRawUnsafe(statement); });
     console.log('Admin schema ready. Existing accounts and passwords preserved.');
   } finally { await db.$disconnect(); }

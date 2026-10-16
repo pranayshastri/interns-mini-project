@@ -4,6 +4,8 @@ import { AuthClient } from '../grpc/auth-client.service';
 
 export const authTypeDefs = `
   type User { id: ID!, email: String!, fullName: String!, role: String!, shopId: String, status: String! }
+  type AdminShop { id: ID!, ownerId: ID!, name: String!, description: String!, createdAt: String! }
+  type AdminSellerPayload { user: User!, shop: AdminShop! }
   type AuthPayload { user: User! }
   type AdminUserPage { users: [User!]!, total: Int!, page: Int!, limit: Int! }
   type AdminOverview { customers: Int!, sellers: Int!, admins: Int!, suspended: Int! }
@@ -16,6 +18,7 @@ export const authTypeDefs = `
     adminUser(id: ID!): User!
     adminOverview: AdminOverview!
     adminActivity(page: Int, limit: Int): AdminActivityPage!
+    adminShop(id: ID!): AdminShop!
     adminHealth: AdminHealth!
   }
   type Mutation {
@@ -23,9 +26,11 @@ export const authTypeDefs = `
     login(email: String!, password: String!): AuthPayload!
     updateProfile(fullName: String!): User!
     adminSetAccountStatus(id: ID!, status: String!, expectedStatus: String!, reason: String!): User!
+    adminCreateSeller(email: String!, password: String!, fullName: String!, shopName: String!, description: String!): AdminSellerPayload!
     logout: Boolean!
   }
 `;
+const shopView = (shop: any) => ({ id: shop.id, ownerId: shop.owner_id, name: shop.name, description: shop.description, createdAt: shop.created_at });
 const cookieName = 'shop_session';
 const userView = (user: any) => ({ id: user.id, email: user.email, fullName: user.full_name, role: user.role, shopId: user.shop_id || null, status: user.status });
 function readToken(req: any, required = true): string {
@@ -90,6 +95,15 @@ export class AuthResolver {
   async adminActivity(@Args() args: any, @Context() context: any) {
     const result = await this.auth.call('adminActivity', { ...args, token: readToken(context.req) });
     return { ...result, events: result.events.map((e: any) => ({ id: e.id, actorId: e.actor_id, actorName: e.actor_name, targetId: e.target_id, targetEmail: e.target_email, action: e.action, reason: e.reason, previousStatus: e.previous_status, newStatus: e.new_status, createdAt: e.created_at })) };
+  }
+  @Mutation('adminCreateSeller')
+  async adminCreateSeller(@Args() args: any, @Context() context: any) {
+    const result = await this.auth.call('adminCreateSeller', { email: args.email, password: args.password, full_name: args.fullName, shop_name: args.shopName, description: args.description, token: readToken(context.req) });
+    return { user: userView(result.user), shop: shopView(result.shop) };
+  }
+  @Query('adminShop')
+  async adminShop(@Args('id') id: string, @Context() context: any) {
+    return shopView(await this.auth.call('adminShop', { id, token: readToken(context.req) }));
   }
   @Query('adminHealth')
   async adminHealth(@Context() context: any) {
