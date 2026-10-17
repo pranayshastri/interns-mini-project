@@ -12,7 +12,7 @@ With Docker running and dependencies installed:
 
 ```bash
 cd /home/ankit/pro/dezinetproject/interns-mini-project
-npm run dev:auth
+npm run dev
 ```
 
 This starts PostgreSQL and Valkey via Compose, generates Prisma Client, builds Auth and gateway, checks the existing users table, then starts Auth, gateway and frontend. A real request through the frontend rewrite and mTLS gRPC must reject an invalid JWT before the launcher prints “ready”. It does not insert sample accounts or reset databases.
