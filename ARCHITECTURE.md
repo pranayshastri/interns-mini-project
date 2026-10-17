@@ -46,14 +46,14 @@ flowchart TD
     end
 
     subgraph Gateway_Tier ["Edge API Gateway"]
-        GW["GraphQL API Gateway\n(Port: 4000)\n• Single /graphql Endpoint\n• JWT Verification & Role Forwarding\n• mTLS Client for Internal Services"]
+        GW["GraphQL API Gateway\n(Port: 4000)\n• Single /graphql Endpoint\n• Session Cookie (shop_session) Verification & Role Forwarding\n• mTLS Client for Internal Services"]
     end
 
     subgraph gRPC_Tier ["Internal Services (Secured with mTLS)"]
-        AUTH["Auth Service\n(:50051)\n• Login & Roles\n• DB: auth_db"]
-        CATALOG["Catalog Service\n(:50052)\n• Product Listings\n• DB: catalog_db"]
-        ORDER["Order Service\n(:50053)\n• Order Creation\n• Outbox Publisher Worker\n• DB: order_db"]
-        INVENTORY["Inventory Service\n(:50054)\n• Stock Allocation\n• Idempotent Kafka Consumer\n• DB: inventory_db"]
+        AUTH["Auth Service\n(:50051)\n• Login & Roles\n• DB: ecommerce_auth_db"]
+        CATALOG["Catalog Service\n(:50052)\n• Product Listings\n• DB: ecommerce_catalog_db"]
+        ORDER["Order Service\n(:50053)\n• Order Creation\n• Outbox Publisher Worker\n• DB: ecommerce_order_db"]
+        INVENTORY["Inventory Service\n(:50054)\n• Stock Allocation\n• Idempotent Kafka Consumer\n• DB: ecommerce_inventory_db"]
     end
 
     subgraph Kafka_Tier ["Event Streaming Backbone"]
@@ -62,10 +62,14 @@ flowchart TD
     end
 
     subgraph DB_Tier ["Persistence Tier (Database-per-Service)"]
-        DB_AUTH[("PostgreSQL\nauth_db")]
-        DB_CAT[("PostgreSQL\ncatalog_db")]
-        DB_ORD[("PostgreSQL\norder_db\n(orders + outbox_events)")]
-        DB_INV[("PostgreSQL\ninventory_db\n(stock + inbox_events)")]
+        DB_AUTH[("PostgreSQL\necommerce_auth_db")]
+        DB_CAT[("PostgreSQL\necommerce_catalog_db")]
+        DB_ORD[("PostgreSQL\necommerce_order_db\n(orders + outbox_events)")]
+        DB_INV[("PostgreSQL\necommerce_inventory_db\n(stock + inbox_events)")]
+    end
+
+    subgraph Session_Tier ["Session & Cache Tier"]
+        VALKEY[("Valkey (:6379)\n• Session Store (shop_session JWTs)\n• Catalog Cache")]
     end
 
     %% Client to Gateway
@@ -84,6 +88,10 @@ flowchart TD
     CATALOG --> DB_CAT
     ORDER --> DB_ORD
     INVENTORY --> DB_INV
+
+    %% Sessions & Cache
+    AUTH --> VALKEY
+    GW --> VALKEY
 
     %% Event Flow
     DB_ORD -.->|"Outbox Poller Reads"| ORDER
@@ -104,16 +112,21 @@ All users authenticate through the exact same GraphQL mutation:
 ```graphql
 mutation Login($email: String!, $password: String!) {
   login(email: $email, password: $password) {
-    accessToken
     user {
       id
       email
+      fullName
       role # "CUSTOMER" | "SHOPKEEPER" | "ADMIN"
       shopId # present if role == SHOPKEEPER
+      status # "ACTIVE" | "SUSPENDED"
     }
   }
 }
 ```
+
+> **Session model:** the gateway sets an **HttpOnly `shop_session` cookie** (JWT, 1h) on
+> successful `login`/`register`. The GraphQL `AuthPayload` intentionally does **not** expose
+> the token — the browser auto-sends the cookie on every subsequent `/graphql` request.
 
 ### 3.2 Authentication & Claims Propagation Flow
 
@@ -128,11 +141,11 @@ sequenceDiagram
     User->>GW: POST /graphql { mutation: login(email, password) }
     GW->>AuthSvc: gRPC Authenticate(email, password) [over mTLS]
     AuthSvc-->>GW: User Claims + Signed JWT
-    GW-->>User: { accessToken, user: { id, role } }
+    GW-->>User: Set-Cookie: shop_session=<JWT> (HttpOnly) + { user: { id, role } }
 
     Note over User,GW: Subsequent Authenticated Operation
-    User->>GW: POST /graphql { mutation: createOrder(...) } with Bearer JWT
-    GW->>GW: Verify JWT signature & extract claims
+    User->>GW: POST /graphql { mutation: createOrder(...) } with shop_session cookie
+    GW->>AuthSvc: gRPC GetProfile(token) [over mTLS] - resolves user + role
     GW->>OrderSvc: gRPC CreateOrder(...) [over mTLS with metadata: x-user-id, x-user-role]
     OrderSvc-->>GW: OrderCreatedResponse
     GW-->>User: { id, status: "PENDING", ... }
@@ -163,7 +176,7 @@ sequenceDiagram
     autonumber
     participant Client as API Gateway
     participant Svc as Order Service
-    participant DB as PostgreSQL (order_db)
+    participant DB as PostgreSQL (ecommerce_order_db)
     participant Poller as Outbox Poller Worker
     participant Kafka as Kafka (shop.orders.v1)
     participant Inv as Inventory Service
@@ -191,7 +204,7 @@ sequenceDiagram
 
 ### 4.3 Outbox Table & Poller Design
 
-#### `order_db` Schema for Outbox
+#### `ecommerce_order_db` Schema for Outbox
 ```sql
 CREATE TABLE orders (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -223,7 +236,7 @@ CREATE TABLE outbox_events (
     published_at TIMESTAMP WITH TIME ZONE NULL
 );
 
-CREATE INDEX idx_outbox_pending ON outbox_events(status, created_at) WHERE status = 'PENDING';
+CREATE INDEX IF NOT EXISTS idx_outbox_pending ON outbox_events(status, created_at) WHERE status = 'PENDING';
 ```
 
 #### Polling Publisher Worker Logic
@@ -307,7 +320,7 @@ Kafka provides **at-least-once delivery**. A consumer crash or network timeout d
 To prevent double-deducting stock, the Inventory Service uses an `inbox_events` table:
 
 ```sql
--- In inventory_db
+-- In ecommerce_inventory_db
 CREATE TABLE inbox_events (
     event_id UUID PRIMARY KEY,
     event_type VARCHAR(64) NOT NULL,
@@ -507,7 +520,7 @@ func main() {
 
 ### 5.4 Configuring mTLS on gRPC Clients (Node.js Gateway Example)
 ```typescript
-// gateway/src/clients/order.client.ts
+// apps/api-gateway/src/grpc/order-client.service.ts (illustrative example; the real gateway wires gRPC via ClientGrpc)
 import * as grpc from '@grpc/grpc-js';
 import * as protoLoader from '@grpc/proto-loader';
 import * as fs from 'fs';
@@ -553,6 +566,18 @@ option go_package = "github.com/platform/gen/authv1";
 service AuthService {
   rpc Authenticate (AuthRequest) returns (AuthResponse);
   rpc ValidateToken (ValidateTokenRequest) returns (ValidateTokenResponse);
+  rpc Register (RegisterRequest) returns (AuthResponse);
+  rpc GetProfile (ValidateTokenRequest) returns (UserProfile);
+  rpc UpdateProfile (UpdateProfileRequest) returns (UserProfile);
+  rpc AdminUsers (AdminUsersRequest) returns (AdminUsersResponse);
+  rpc AdminUser (AdminUserRequest) returns (UserProfile);
+  rpc AdminSetStatus (AdminStatusRequest) returns (UserProfile);
+  rpc AdminOverview (ValidateTokenRequest) returns (AdminOverviewResponse);
+  rpc AdminActivity (AdminActivityRequest) returns (AdminActivityResponse);
+  rpc AdminCreateSeller (AdminCreateSellerRequest) returns (AdminCreateSellerResponse);
+  rpc AdminShop (AdminUserRequest) returns (AdminShopResponse);
+  rpc AdminHealth (ValidateTokenRequest) returns (AdminHealthResponse);
+  rpc Logout (ValidateTokenRequest) returns (LogoutResponse);
 }
 
 message AuthRequest {
@@ -561,6 +586,7 @@ message AuthRequest {
 }
 
 message AuthResponse {
+  UserProfile user = 5;
   string access_token = 1;
   string user_id = 2;
   string role = 3; // CUSTOMER, SHOPKEEPER, ADMIN
@@ -577,6 +603,25 @@ message ValidateTokenResponse {
   string role = 3;
   string shop_id = 4;
 }
+
+// Additive extensions (admin workspace, seller & shop management): see proto/auth.proto.
+message RegisterRequest { string email = 1; string password = 2; string full_name = 3; }
+message UserProfile { string id = 1; string email = 2; string full_name = 3; string role = 4; string shop_id = 5; string status = 6; }
+message UpdateProfileRequest { string token = 1; string full_name = 2; }
+message LogoutResponse { bool success = 1; }
+
+message AdminUsersRequest { string token = 1; string search = 2; string role = 3; string status = 4; int32 page = 5; int32 limit = 6; }
+message AdminUsersResponse { repeated UserProfile users = 1; int32 total = 2; int32 page = 3; int32 limit = 4; }
+message AdminUserRequest { string token = 1; string id = 2; }
+message AdminStatusRequest { string token = 1; string id = 2; string status = 3; string reason = 4; string expected_status = 5; }
+message AdminOverviewResponse { int32 customers = 1; int32 sellers = 2; int32 admins = 3; int32 suspended = 4; }
+message AdminActivityRequest { string token = 1; int32 page = 2; int32 limit = 3; }
+message AdminAuditEvent { string id = 1; string actor_id = 2; string actor_name = 3; string target_id = 4; string target_email = 5; string action = 6; string reason = 7; string previous_status = 8; string new_status = 9; string created_at = 10; }
+message AdminActivityResponse { repeated AdminAuditEvent events = 1; int32 total = 2; int32 page = 3; int32 limit = 4; }
+message AdminHealthResponse { string checked_at = 1; bool database = 2; bool sessions = 3; }
+message AdminCreateSellerRequest { string token = 1; string email = 2; string password = 3; string full_name = 4; string shop_name = 5; string description = 6; }
+message AdminShopResponse { string id = 1; string owner_id = 2; string name = 3; string description = 4; string created_at = 5; }
+message AdminCreateSellerResponse { UserProfile user = 1; AdminShopResponse shop = 2; }
 ```
 
 #### `proto/catalog.proto`
@@ -685,28 +730,52 @@ message UpdateStockRequest {
 }
 ```
 
-### 6.2 GraphQL Gateway Schema (`gateway/schema.graphql`)
+### 6.2 GraphQL Gateway Schema (resolver-owned SDL)
+
+The gateway builds its SDL at runtime from resolver-owned typeDefs strings — see
+`apps/api-gateway/src/app.module.ts` (`typeDefs: [authTypeDefs, orderTypeDefs, commerceTypeDefs]`):
+
+- `resolvers/auth.resolver.ts` → `authTypeDefs` (accounts, sessions, admin workspace incl. seller & shop management)
+- `resolvers/order.resolver.ts` → `orderTypeDefs` (orders)
+- `resolvers/commerce.types.ts` → `commerceTypeDefs` (catalog product & stock queries)
+
+`apps/api-gateway/src/graphql/schema.graphql` is **not loaded at runtime** — it only points to
+the authoritative typeDefs above. Sessions use an HttpOnly `shop_session` cookie, so there is
+no `accessToken` field.
+
+**Operations available today:**
+
 ```graphql
 type User {
   id: ID!
   email: String!
-  role: String!
-  shopId: String
+  fullName: String!
+  role: String!          # "CUSTOMER" | "SHOPKEEPER" | "ADMIN"
+  shopId: String         # present if role == SHOPKEEPER
+  status: String!        # "ACTIVE" | "SUSPENDED"
 }
 
-type AuthPayload {
-  accessToken: String!
-  user: User!
-}
-
-type Product {
+type AuthPayload { user: User! }
+type AdminShop { id: ID!, ownerId: ID!, name: String!, description: String!, createdAt: String! }
+type AdminSellerPayload { user: User!, shop: AdminShop! }
+type AdminUserPage { users: [User!]!, total: Int!, page: Int!, limit: Int! }
+type AdminOverview { customers: Int!, sellers: Int!, admins: Int!, suspended: Int! }
+type AdminEvent {
   id: ID!
-  shopId: ID!
-  name: String!
-  description: String!
-  priceCents: Int!
-  availableStock: Int!
+  actorId: ID!
+  actorName: String!
+  targetId: ID!
+  targetEmail: String!
+  action: String!
+  reason: String!
+  previousStatus: String!
+  newStatus: String!
+  createdAt: String!
 }
+type AdminActivityPage { events: [AdminEvent!]!, total: Int!, page: Int!, limit: Int! }
+type AdminHealth { checkedAt: String!, database: Boolean!, sessions: Boolean! }
+
+type Product { id: ID!, shopId: ID!, name: String!, description: String!, priceCents: Int!, availableStock: Int! }
 
 type Order {
   id: ID!
@@ -724,17 +793,32 @@ input OrderItemInput {
 }
 
 type Query {
-  products: [Product!]!
+  me: User!
+  adminUsers(search: String, role: String, status: String, page: Int, limit: Int): AdminUserPage!
+  adminUser(id: ID!): User!
+  adminOverview: AdminOverview!
+  adminActivity(page: Int, limit: Int): AdminActivityPage!
+  adminShop(id: ID!): AdminShop!
+  adminHealth: AdminHealth!
   order(id: ID!): Order
+  products(page: Int = 1, limit: Int = 50): [Product!]!
+  product(id: ID!): Product!
   stock(productId: ID!): Int!
 }
 
 type Mutation {
+  register(email: String!, password: String!, fullName: String!): AuthPayload!
   login(email: String!, password: String!): AuthPayload!
-  createProduct(name: String!, description: String!, priceCents: Int!, initialStock: Int!): Product!
+  updateProfile(fullName: String!): User!
+  adminSetAccountStatus(id: ID!, status: String!, expectedStatus: String!, reason: String!): User!
+  adminCreateSeller(email: String!, password: String!, fullName: String!, shopName: String!, description: String!): AdminSellerPayload!
+  logout: Boolean!
   createOrder(items: [OrderItemInput!]!, shippingAddress: String!): Order!
 }
 ```
+
+**Still pending:** the `createProduct` mutation (shopkeeper product creation via
+`CatalogService.CreateProduct`) — tracked in `TASKS.md`.
 
 ---
 
@@ -742,9 +826,9 @@ type Mutation {
 
 ### 7.1 Database DDL per Service
 
-#### `auth_db`
+#### `ecommerce_auth_db`
 ```sql
-CREATE TABLE users (
+CREATE TABLE IF NOT EXISTS users (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     email VARCHAR(255) UNIQUE NOT NULL,
     password_hash VARCHAR(255) NOT NULL,
@@ -752,11 +836,29 @@ CREATE TABLE users (
     full_name VARCHAR(128) NOT NULL,
     shop_id UUID NULL
 );
+
+-- Additive upgrade for existing Auth users. No roles, passwords or rows are replaced.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS status VARCHAR(16) NOT NULL DEFAULT 'ACTIVE';
+ALTER TABLE users ADD COLUMN IF NOT EXISTS session_version INTEGER NOT NULL DEFAULT 0;
+CREATE TABLE IF NOT EXISTS admin_audit_events (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  actor_id UUID NOT NULL,
+  actor_name VARCHAR(128) NOT NULL,
+  target_id UUID NOT NULL,
+  target_email VARCHAR(255) NOT NULL,
+  action VARCHAR(48) NOT NULL,
+  reason VARCHAR(500) NOT NULL,
+  previous_status VARCHAR(16) NOT NULL,
+  new_status VARCHAR(16) NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS users_role_status_id_idx ON users(role, status, id);
+CREATE INDEX IF NOT EXISTS admin_audit_created_id_idx ON admin_audit_events(created_at DESC, id);
 ```
 
-#### `catalog_db`
+#### `ecommerce_catalog_db`
 ```sql
-CREATE TABLE products (
+CREATE TABLE IF NOT EXISTS products (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     shop_id UUID NOT NULL,
     name VARCHAR(255) NOT NULL,
@@ -766,42 +868,42 @@ CREATE TABLE products (
 );
 ```
 
-#### `inventory_db`
+#### `ecommerce_inventory_db`
 ```sql
-CREATE TABLE product_inventory (
+CREATE TABLE IF NOT EXISTS product_inventory (
     product_id UUID PRIMARY KEY,
     available_stock INT NOT NULL CHECK (available_stock >= 0),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE TABLE inbox_events (
+CREATE TABLE IF NOT EXISTS inbox_events (
     event_id UUID PRIMARY KEY,
     event_type VARCHAR(64) NOT NULL,
     processed_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL
 );
 ```
 
-#### `order_db`
+#### `ecommerce_order_db`
 *(Contains `orders`, `order_items`, and `outbox_events` as specified in Section 4.3).*
 
 ### 7.2 Initial Seed Data (`infra/postgres/schema-init.sql`)
 ```sql
--- Seed 3 Users in auth_db (Password: 'Password123' hashed with bcrypt)
-\c auth_db;
+-- Seed 3 Users in ecommerce_auth_db (Password: 'Password123', bcrypt cost 12)
+\c ecommerce_auth_db;
 INSERT INTO users (id, email, password_hash, role, full_name, shop_id) VALUES
-('a0000000-0000-0000-0000-000000000001', 'admin@shopping.com', '$2a$10$7EqJtq98hPqEX7fNZaFWoO.eR8M1gN7aU5F3aHkP4.N4/M.b/Vn1y', 'ADMIN', 'Platform Admin', NULL),
-('b0000000-0000-0000-0000-000000000002', 'shopkeeper@gadgets.com', '$2a$10$7EqJtq98hPqEX7fNZaFWoO.eR8M1gN7aU5F3aHkP4.N4/M.b/Vn1y', 'SHOPKEEPER', 'John Merchant', 'd0000000-0000-0000-0000-000000000001'),
-('c0000000-0000-0000-0000-000000000003', 'customer@gmail.com', '$2a$10$7EqJtq98hPqEX7fNZaFWoO.eR8M1gN7aU5F3aHkP4.N4/M.b/Vn1y', 'CUSTOMER', 'Alice Consumer', NULL)
+('a0000000-0000-0000-0000-000000000001', 'admin@shopping.com', '$2a$12$180.JGq7G31G9VZNMrB6sewBP197DUWsMxpCpwSgLqCLqgtTz9cia', 'ADMIN', 'Platform Admin', NULL),
+('b0000000-0000-0000-0000-000000000002', 'shopkeeper@gadgets.com', '$2a$12$180.JGq7G31G9VZNMrB6sewBP197DUWsMxpCpwSgLqCLqgtTz9cia', 'SHOPKEEPER', 'John Merchant', 'd0000000-0000-0000-0000-000000000001'),
+('c0000000-0000-0000-0000-000000000003', 'customer@gmail.com', '$2a$12$180.JGq7G31G9VZNMrB6sewBP197DUWsMxpCpwSgLqCLqgtTz9cia', 'CUSTOMER', 'Alice Consumer', NULL)
 ON CONFLICT (email) DO NOTHING;
 
--- Seed Initial Product in catalog_db
-\c catalog_db;
+-- Seed Initial Product in ecommerce_catalog_db
+\c ecommerce_catalog_db;
 INSERT INTO products (id, shop_id, name, description, price_cents) VALUES
 ('e0000000-0000-0000-0000-000000000001', 'd0000000-0000-0000-0000-000000000001', 'Mechanical Keyboard', 'RGB Hot-swappable Mechanical Keyboard', 8900)
 ON CONFLICT (id) DO NOTHING;
 
--- Seed Initial Inventory in inventory_db
-\c inventory_db;
+-- Seed Initial Inventory in ecommerce_inventory_db
+\c ecommerce_inventory_db;
 INSERT INTO product_inventory (product_id, available_stock) VALUES
 ('e0000000-0000-0000-0000-000000000001', 50)
 ON CONFLICT (product_id) DO NOTHING;
@@ -811,15 +913,13 @@ ON CONFLICT (product_id) DO NOTHING;
 
 ## 8. Docker Infrastructure & Compose Setup
 
-The entire distributed system runs locally with **Docker Compose**:
-- **PostgreSQL 16:** Runs a script to auto-create `auth_db`, `catalog_db`, `order_db`, and `inventory_db`.
-- **Kafka in KRaft Mode:** No ZooKeeper container required.
-- **Kafka UI:** Accessible on port `8080` to inspect topics and consumer offsets.
+The entire distributed system runs locally with **Docker Compose** (authoritative file: `docker-compose.yml` at the repo root — the excerpt below mirrors it):
+- **PostgreSQL 16:** Custom image built from `infra/postgres/` that embeds `init-multi-db.sh` + `schema-init.sql` to auto-create `ecommerce_auth_db`, `ecommerce_catalog_db`, `ecommerce_order_db`, and `ecommerce_inventory_db`. The admin user/password come from `.env` (`POSTGRES_USER` defaults to `ecommerce_admin`).
+- **Valkey 8:** Session store (`shop_session` JWTs) and catalog cache used by the Auth service and API Gateway.
+- **Kafka in KRaft Mode:** `apache/kafka:3.7.0` — no ZooKeeper container required.
+- **Kafka UI:** Accessible on port `8080` (override with `KAFKA_UI_PORT`) to inspect topics and consumer offsets.
 
 ```yaml
-# docker-compose.yml
-version: '3.9'
-
 networks:
   platform-net:
     driver: bridge
@@ -827,75 +927,101 @@ networks:
 volumes:
   pg_data:
   kafka_data:
+  valkey_data:
 
 services:
   # =========================================================================
-  # 1. POSTGRESQL 16 (Multi-Database Setup)
+  # 1. POSTGRESQL 16 (Multi-Database Setup: auth, catalog, order, inventory)
   # =========================================================================
   postgres:
-    image: postgres:16-alpine
+    build:
+      context: ./infra/postgres
+    image: ecommerce-postgres:16
     container_name: shop-postgres
-    restart: always
+    restart: no
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: rootpassword
-      POSTGRES_MULTIPLE_DATABASES: auth_db,catalog_db,order_db,inventory_db
+      POSTGRES_USER: ${POSTGRES_USER:-ecommerce_admin}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_MULTIPLE_DATABASES: ${POSTGRES_MULTIPLE_DATABASES:-ecommerce_auth_db,ecommerce_catalog_db,ecommerce_order_db,ecommerce_inventory_db}
     ports:
-      - "5432:5432"
+      - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - pg_data:/var/lib/postgresql/data
-      - ./infra/postgres/init-multi-db.sh:/docker-entrypoint-initdb.d/01-init-multi-db.sh:ro
-      - ./infra/postgres/schema-init.sql:/docker-entrypoint-initdb.d/02-schema-init.sql:ro
     networks:
       - platform-net
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-ecommerce_admin}"]
       interval: 5s
       timeout: 5s
       retries: 5
 
   # =========================================================================
-  # 2. APACHE KAFKA (KRAFT MODE)
+  # 2. VALKEY 8 (In-Memory Key-Value Store for Sessions & Caching)
   # =========================================================================
-  kafka:
-    image: bitnami/kafka:3.7.0
-    container_name: shop-kafka
-    restart: always
+  valkey:
+    build:
+      context: ./infra/valkey
+    image: ecommerce-valkey:8
+    container_name: shop-valkey
+    restart: no
     ports:
-      - "9092:9092"   # Internal Docker
-      - "9094:9094"   # Host
-    environment:
-      - KAFKA_CFG_NODE_ID=1
-      - KAFKA_CFG_PROCESS_ROLES=broker,controller
-      - KAFKA_CFG_CONTROLLER_QUORUM_VOTERS=1@kafka:9093
-      - KAFKA_KRAFT_CLUSTER_ID=MkU3OEVBNTcwNTJENDM2Qk
-      - KAFKA_CFG_LISTENERS=PLAINTEXT://:9092,CONTROLLER://:9093,EXTERNAL://:9094
-      - KAFKA_CFG_ADVERTISED_LISTENERS=PLAINTEXT://kafka:9092,EXTERNAL://localhost:9094
-      - KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP=CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,EXTERNAL:PLAINTEXT
-      - KAFKA_CFG_CONTROLLER_LISTENER_NAMES=CONTROLLER
-      - KAFKA_CFG_INTER_BROKER_LISTENER_NAME=PLAINTEXT
-      - KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE=true
+      - "${VALKEY_PORT:-6379}:6379"
     volumes:
-      - kafka_data:/bitnami/kafka/data
+      - valkey_data:/data
     networks:
       - platform-net
     healthcheck:
-      test: ["CMD-SHELL", "kafka-topics.sh --bootstrap-server localhost:9092 --list || exit 0"]
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # =========================================================================
+  # 3. APACHE KAFKA (KRAFT MODE - NO ZOOKEEPER REQUIRED)
+  # =========================================================================
+  kafka:
+    image: apache/kafka:3.7.0
+    container_name: shop-kafka
+    restart: no
+    ports:
+      - "9092:9092"   # Internal Docker Network
+      - "9094:9094"   # Host machine development port
+    environment:
+      - KAFKA_BROKER_ID=1
+      - KAFKA_PROCESS_ROLES=broker,controller
+      - KAFKA_CONTROLLER_QUORUM_VOTERS=1@kafka:9093
+      - KAFKA_CLUSTER_ID=${KAFKA_CLUSTER_ID:-MkU3OEVBNTcwNTJENDM2Qk}
+      - KAFKA_LISTENERS=PLAINTEXT://:9092,CONTROLLER://:9093,EXTERNAL://:9094
+      - KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://kafka:9092,EXTERNAL://localhost:9094
+      - KAFKA_LISTENER_SECURITY_PROTOCOL_MAP=CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,EXTERNAL:PLAINTEXT
+      - KAFKA_CONTROLLER_LISTENER_NAMES=CONTROLLER
+      - KAFKA_INTER_BROKER_LISTENER_NAME=PLAINTEXT
+      - KAFKA_AUTO_CREATE_TOPICS_ENABLE=true
+      - KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR=1
+      - KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR=1
+      - KAFKA_TRANSACTION_STATE_LOG_MIN_ISR=1
+      - KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS=0
+    volumes:
+      - kafka_data:/tmp/kraft-combined-logs
+    networks:
+      - platform-net
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list || exit 0"]
       interval: 10s
       timeout: 5s
       retries: 5
 
   # =========================================================================
-  # 3. KAFKA UI (Visual Inspection Console)
+  # 4. KAFKA UI (Visual Inspection Console)
   # =========================================================================
   kafka-ui:
     image: provectuslabs/kafka-ui:latest
     container_name: shop-kafka-ui
     ports:
-      - "8080:8080"
+      - "${KAFKA_UI_PORT:-8080}:8080"
     environment:
       KAFKA_CLUSTERS_0_NAME: local-kraft
-      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: ${KAFKA_BROKER_INTERNAL:-kafka:9092}
     depends_on:
       kafka:
         condition: service_healthy
@@ -903,37 +1029,48 @@ services:
       - platform-net
 
   # =========================================================================
-  # 4. MICROSERVICES (Mounting ./infra/certs for mTLS)
+  # 5. MICROSERVICES (NestJS services with mTLS mounting ./infra/certs)
   # =========================================================================
   auth-service:
-    build: ./services/auth-service
+    build:
+      context: .
+      dockerfile: ./apps/auth-service/Dockerfile
     container_name: shop-auth-service
     ports:
-      - "50051:50051"
+      - "${AUTH_SERVICE_PORT:-50051}:50051"
     volumes:
       - ./infra/certs:/certs:ro
     environment:
       PORT: 50051
-      DATABASE_URL: postgres://postgres:rootpassword@postgres:5432/auth_db?sslmode=disable
+      DATABASE_URL: ${AUTH_DATABASE_URL:-postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/ecommerce_auth_db?sslmode=disable}
+      VALKEY_HOST: ${VALKEY_HOST:-valkey}
+      VALKEY_PORT: ${VALKEY_PORT:-6379}
+      JWT_SECRET: ${JWT_SECRET}
       TLS_CERT_PATH: /certs/auth-service.crt
       TLS_KEY_PATH: /certs/auth-service.key
       TLS_CA_PATH: /certs/ca.crt
     depends_on:
       postgres:
         condition: service_healthy
+      valkey:
+        condition: service_healthy
     networks:
       - platform-net
 
   catalog-service:
-    build: ./services/catalog-service
+    build:
+      context: .
+      dockerfile: ./apps/catalog-service/Dockerfile
     container_name: shop-catalog-service
     ports:
-      - "50052:50052"
+      - "${CATALOG_SERVICE_PORT:-50052}:50052"
     volumes:
       - ./infra/certs:/certs:ro
     environment:
       PORT: 50052
-      DATABASE_URL: postgres://postgres:rootpassword@postgres:5432/catalog_db?sslmode=disable
+      DATABASE_URL: ${CATALOG_DATABASE_URL:-postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/ecommerce_catalog_db?sslmode=disable}
+      VALKEY_HOST: ${VALKEY_HOST:-valkey}
+      VALKEY_PORT: ${VALKEY_PORT:-6379}
       TLS_CERT_PATH: /certs/catalog-service.crt
       TLS_KEY_PATH: /certs/catalog-service.key
       TLS_CA_PATH: /certs/ca.crt
@@ -944,16 +1081,18 @@ services:
       - platform-net
 
   order-service:
-    build: ./services/order-service
+    build:
+      context: .
+      dockerfile: ./apps/order-service/Dockerfile
     container_name: shop-order-service
     ports:
-      - "50053:50053"
+      - "${ORDER_SERVICE_PORT:-50053}:50053"
     volumes:
       - ./infra/certs:/certs:ro
     environment:
       PORT: 50053
-      DATABASE_URL: postgres://postgres:rootpassword@postgres:5432/order_db?sslmode=disable
-      KAFKA_BROKERS: kafka:9092
+      DATABASE_URL: ${ORDER_DATABASE_URL:-postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/ecommerce_order_db?sslmode=disable}
+      KAFKA_BROKERS: ${KAFKA_BROKER_INTERNAL:-kafka:9092}
       TLS_CERT_PATH: /certs/order-service.crt
       TLS_KEY_PATH: /certs/order-service.key
       TLS_CA_PATH: /certs/ca.crt
@@ -966,16 +1105,18 @@ services:
       - platform-net
 
   inventory-service:
-    build: ./services/inventory-service
+    build:
+      context: .
+      dockerfile: ./apps/inventory-service/Dockerfile
     container_name: shop-inventory-service
     ports:
-      - "50054:50054"
+      - "${INVENTORY_SERVICE_PORT:-50054}:50054"
     volumes:
       - ./infra/certs:/certs:ro
     environment:
       PORT: 50054
-      DATABASE_URL: postgres://postgres:rootpassword@postgres:5432/inventory_db?sslmode=disable
-      KAFKA_BROKERS: kafka:9092
+      DATABASE_URL: ${INVENTORY_DATABASE_URL:-postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/ecommerce_inventory_db?sslmode=disable}
+      KAFKA_BROKERS: ${KAFKA_BROKER_INTERNAL:-kafka:9092}
       TLS_CERT_PATH: /certs/inventory-service.crt
       TLS_KEY_PATH: /certs/inventory-service.key
       TLS_CA_PATH: /certs/ca.crt
@@ -988,21 +1129,25 @@ services:
       - platform-net
 
   # =========================================================================
-  # 5. GRAPHQL API GATEWAY
+  # 6. GRAPHQL API GATEWAY (NestJS GraphQL on :4000)
   # =========================================================================
   api-gateway:
-    build: ./gateway
+    build:
+      context: .
+      dockerfile: ./apps/api-gateway/Dockerfile
     container_name: shop-api-gateway
     ports:
-      - "4000:4000"
+      - "${API_GATEWAY_PORT:-4000}:4000"
     volumes:
       - ./infra/certs:/certs:ro
     environment:
       PORT: 4000
-      AUTH_SERVICE_ADDR: auth-service:50051
-      CATALOG_SERVICE_ADDR: catalog-service:50052
-      ORDER_SERVICE_ADDR: order-service:50053
-      INVENTORY_SERVICE_ADDR: inventory-service:50054
+      VALKEY_HOST: ${VALKEY_HOST:-valkey}
+      VALKEY_PORT: ${VALKEY_PORT:-6379}
+      AUTH_SERVICE_ADDR: ${AUTH_SERVICE_ADDR:-auth-service:50051}
+      CATALOG_SERVICE_ADDR: ${CATALOG_SERVICE_ADDR:-catalog-service:50052}
+      ORDER_SERVICE_ADDR: ${ORDER_SERVICE_ADDR:-order-service:50053}
+      INVENTORY_SERVICE_ADDR: ${INVENTORY_SERVICE_ADDR:-inventory-service:50054}
       TLS_CERT_PATH: /certs/api-gateway.crt
       TLS_KEY_PATH: /certs/api-gateway.key
       TLS_CA_PATH: /certs/ca.crt
@@ -1011,6 +1156,7 @@ services:
       - catalog-service
       - order-service
       - inventory-service
+      - valkey
     networks:
       - platform-net
 ```
@@ -1070,7 +1216,7 @@ gantt
 - [ ] Write `infra/postgres/init-multi-db.sh` and `infra/postgres/schema-init.sql`.
 - [ ] Run `scripts/generate-certs.sh` to generate the internal Root CA and service certificates.
 - [ ] Start Kafka (KRaft), PostgreSQL, and Kafka UI via `docker compose up -d postgres kafka kafka-ui`.
-- [ ] Verify databases in PostgreSQL CLI and open Kafka UI at `http://localhost:8080`.
+- [ ] Verify databases in PostgreSQL CLI and open Kafka UI at `http://127.0.0.1:8080`.
 
 ### Phase 2: Protobuf Contracts & mTLS Service Communication
 - [ ] Compile `.proto` files to Go / TypeScript bindings.
@@ -1108,7 +1254,7 @@ To successfully complete the project, developers must demonstrate the following 
 2. The database transaction rolls back.
 3. Query `outbox_events`:
    ```bash
-   docker exec -it shop-postgres psql -U postgres -d order_db -c "SELECT COUNT(*) FROM outbox_events;"
+   docker exec -it shop-postgres psql -U ecommerce_admin -d ecommerce_order_db -c "SELECT COUNT(*) FROM outbox_events;"
    ```
 4. **Pass Criteria:** Outbox event count remains unchanged (zero phantom events).
 
@@ -1119,13 +1265,13 @@ To successfully complete the project, developers must demonstrate the following 
    docker compose stop kafka
    ```
 2. Place a valid order via GraphQL `createOrder`.
-3. The API call succeeds! Inspect `order_db`: The order is saved and the outbox event is marked `PENDING`.
+3. The API call succeeds! Inspect `ecommerce_order_db`: The order is saved and the outbox event is marked `PENDING`.
 4. Restart Kafka:
    ```bash
    docker compose start kafka
    ```
 5. Watch the Order Service logs: The Outbox Poller reconnects and flushes pending events.
-6. Open Kafka UI (`http://localhost:8080`): The event appears on `shop.orders.v1`.
+6. Open Kafka UI (`http://127.0.0.1:8080`): The event appears on `shop.orders.v1`.
 7. **Pass Criteria:** Order data is preserved and event is published with zero manual intervention.
 
 ### Lab 3: Duplicate Event Delivery & Idempotency Test
@@ -1153,20 +1299,31 @@ To successfully complete the project, developers must demonstrate the following 
 ## 11. Quickstart Run Commands
 
 ```bash
-# 1. Generate mTLS Certificates
+# --- Daily development (WSL bash on the native path - never PowerShell, never /mnt/c) ---
+# Full local stack: Postgres + Valkey + Kafka, all 5 services, Gateway and Frontend:
+npm run dev                        # = node scripts/dev-auth.cjs --all
+# -> Authentication stack ready: http://127.0.0.1:3000/login
+# Ports: 3000 frontend, 4000 gateway (/graphql), 50051-50054 services.
+# Auth stack only (fast iteration; no catalog/inventory/order/Kafka):
+npm run dev:auth
+
+# --- Dockerized stack (alternative to npm run dev; container parity) ----------
+# 1. Generate mTLS Certificates (one-time)
 chmod +x scripts/generate-certs.sh
 ./scripts/generate-certs.sh
 
-# 2. Start Core Infrastructure (Postgres, Kafka KRaft, Kafka UI)
-docker compose up -d postgres kafka kafka-ui
+# 2. Copy .env.example to .env and adjust values (POSTGRES_PASSWORD, JWT_SECRET, ...)
 
-# 3. Check Kafka Topics in Kafka UI
-# Open http://localhost:8080 in your browser
+# 3. Start Core Infrastructure (Postgres, Valkey, Kafka KRaft, Kafka UI)
+docker compose up -d postgres valkey kafka kafka-ui
 
-# 4. Start Microservices and Gateway
+# 4. Check Kafka Topics in Kafka UI
+# Open http://127.0.0.1:8080 in your browser
+
+# 5. Start Microservices and Gateway
 docker compose up -d auth-service catalog-service order-service inventory-service api-gateway
 
-# 5. Inspect Services
+# 6. Inspect Services
 docker compose ps
 docker compose logs -f order-service inventory-service
 ```
