@@ -32,11 +32,11 @@ CREATE TABLE IF NOT EXISTS admin_audit_events (
 CREATE INDEX IF NOT EXISTS users_role_status_id_idx ON users(role, status, id);
 CREATE INDEX IF NOT EXISTS admin_audit_created_id_idx ON admin_audit_events(created_at DESC, id);
 
--- Seed 3 Users in ecommerce_auth_db (Password: 'Password123' hashed with bcrypt)
+-- Seed 3 Users in ecommerce_auth_db (Password: 'Password123', bcrypt cost 12)
 INSERT INTO users (id, email, password_hash, role, full_name, shop_id) VALUES
-('a0000000-0000-0000-0000-000000000001', 'admin@shopping.com', '$2a$10$7EqJtq98hPqEX7fNZaFWoO.eR8M1gN7aU5F3aHkP4.N4/M.b/Vn1y', 'ADMIN', 'Platform Admin', NULL),
-('b0000000-0000-0000-0000-000000000002', 'shopkeeper@gadgets.com', '$2a$10$7EqJtq98hPqEX7fNZaFWoO.eR8M1gN7aU5F3aHkP4.N4/M.b/Vn1y', 'SHOPKEEPER', 'John Merchant', 'd0000000-0000-0000-0000-000000000001'),
-('c0000000-0000-0000-0000-000000000003', 'customer@gmail.com', '$2a$10$7EqJtq98hPqEX7fNZaFWoO.eR8M1gN7aU5F3aHkP4.N4/M.b/Vn1y', 'CUSTOMER', 'Alice Consumer', NULL)
+('a0000000-0000-0000-0000-000000000001', 'admin@shopping.com', '$2a$12$180.JGq7G31G9VZNMrB6sewBP197DUWsMxpCpwSgLqCLqgtTz9cia', 'ADMIN', 'Platform Admin', NULL),
+('b0000000-0000-0000-0000-000000000002', 'shopkeeper@gadgets.com', '$2a$12$180.JGq7G31G9VZNMrB6sewBP197DUWsMxpCpwSgLqCLqgtTz9cia', 'SHOPKEEPER', 'John Merchant', 'd0000000-0000-0000-0000-000000000001'),
+('c0000000-0000-0000-0000-000000000003', 'customer@gmail.com', '$2a$12$180.JGq7G31G9VZNMrB6sewBP197DUWsMxpCpwSgLqCLqgtTz9cia', 'CUSTOMER', 'Alice Consumer', NULL)
 ON CONFLICT (email) DO NOTHING;
 
 -- 2. CATALOG SERVICE DATABASE

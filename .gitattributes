@@ -1,0 +1,2 @@
+# Normalize line endings: store LF in the repo regardless of contributor OS (fixes CRLF noise from cross-OS copies/clones).
+* text=auto
