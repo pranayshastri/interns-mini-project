@@ -40,7 +40,8 @@ async function bootstrap(): Promise<void> {
         url: `0.0.0.0:${port}`,
         credentials,
         loader: {
-        keepCase: true,
+          keepCase: true,
+          longs: String,
         },
       },
     },
