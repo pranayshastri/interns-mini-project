@@ -9,6 +9,9 @@ import { ValkeyService } from '../cache/valkey.service';
 
 const MAX_PRICE_CENTS = 9223372036854775807n;
 
+const validUuid = (value: string) =>
+  /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(value);
+
 @Injectable()
 export class CatalogService {
   constructor(
@@ -119,8 +122,13 @@ export class CatalogService {
   }
 
   async getProduct(productId: string) {
-    if (typeof productId !== 'string' || !productId.trim()) {
-      throw new BadRequestException('product_id is required');
+    if (
+      typeof productId !== 'string' ||
+      !validUuid(productId.trim())
+    ) {
+      throw new BadRequestException(
+        'A valid product UUID is required',
+      );
     }
 
     const product = await this.prisma.product.findUnique({
