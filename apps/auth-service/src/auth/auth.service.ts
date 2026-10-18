@@ -38,7 +38,7 @@ export class AuthService {
     return value as string;
   }
   private profile(user: any) {
-    return { id: user.id, email: user.email, full_name: user.fullName, role: user.role, shop_id: user.shopId ?? '', status: user.status };
+    return { id: user.id, email: user.email, full_name: user.fullName, role: user.role, shop_id: user.shopId ?? '', status: user.status, phone: user.phone };
   }
   private async issue(user: any) {
     const jti = randomUUID();
@@ -91,10 +91,68 @@ export class AuthService {
     }
   }
   async getProfile({ token }: any) { return this.profile((await this.current(token)).user); }
-  async updateProfile({ token, full_name }: any) {
+  async updateProfile({ token, full_name, phone, update_phone }: any) {
     const { user } = await this.current(token);
-    const updated = await this.prisma.user.update({ where: { id: user.id }, data: { fullName: this.name(full_name) } });
+    const updated = await this.prisma.user.update({ where: { id: user.id }, data: { fullName: this.name(full_name), ...(update_phone ? { phone: this.phone(phone, true) } : {}) } });
     return this.profile(updated);
+  }
+  private text(value: unknown, label: string, max: number, optional = false) {
+    if (typeof value !== 'string') return fail(status.INVALID_ARGUMENT, `${label} must be text.`);
+    const clean = value.trim();
+    if ((!optional && !clean) || clean.length > max || /[\x00-\x1f\x7f]/.test(clean)) return fail(status.INVALID_ARGUMENT, `Enter a valid ${label.toLowerCase()} (up to ${max} characters).`);
+    return clean;
+  }
+  private phone(value: unknown, optional = false) {
+    const phone = this.text(value, 'Phone number', 32, optional);
+    if (phone && (!/^\+?[0-9 ()-]+$/.test(phone) || phone.replace(/\D/g, '').length < 7 || phone.replace(/\D/g, '').length > 15)) return fail(status.INVALID_ARGUMENT, 'Enter a phone number with 7–15 digits, including country code if needed.');
+    return phone;
+  }
+  private addressView(address: any) {
+    return { id: address.id, label: address.label, recipient: address.recipient, phone: address.phone, line1: address.line1, line2: address.line2, city: address.city, state: address.state, postal: address.postal, country: address.country, is_default: address.isDefault };
+  }
+  async listAddresses({ token }: any) {
+    const { user } = await this.current(token);
+    const addresses = await this.prisma.address.findMany({ where: { userId: user.id }, orderBy: [{ createdAt: 'asc' }, { id: 'asc' }] });
+    return { addresses: addresses.map(address => this.addressView(address)) };
+  }
+  async changeAddress(data: any, operation: 'save' | 'delete' | 'default') {
+    const { user } = await this.current(data.token);
+    const input = data.address || {};
+    const id = operation === 'save' ? (input.id ? this.uuid(input.id) : '') : this.uuid(data.id);
+    const values = operation === 'save' ? {
+      label: this.text(input.label, 'Address label', 80), recipient: this.name(input.recipient),
+      phone: this.phone(input.phone), line1: this.text(input.line1, 'Address line 1', 200),
+      line2: this.text(input.line2 || '', 'Address line 2', 200, true), city: this.text(input.city, 'City', 100),
+      state: this.text(input.state, 'State / region', 100), postal: this.text(input.postal, 'Postal code', 32),
+      country: this.text(input.country, 'Country', 100),
+    } : undefined;
+    return this.prisma.$transaction(async tx => {
+      // Every address write for this user takes the same row lock, across replicas.
+      await tx.$queryRaw`SELECT id FROM users WHERE id = ${user.id}::uuid FOR UPDATE`;
+      const current = await tx.user.findUnique({ where: { id: user.id } });
+      if (!current || current.status !== 'ACTIVE' || current.sessionVersion !== user.sessionVersion) return fail(status.UNAUTHENTICATED, 'Please sign in again.');
+      const existing = id ? await tx.address.findFirst({ where: { id, userId: user.id } }) : null;
+      if (id && !existing) return fail(status.NOT_FOUND, 'Address not found.');
+      if (operation === 'save') {
+        const count = await tx.address.count({ where: { userId: user.id } });
+        if (!id && count >= 20) return fail(status.FAILED_PRECONDITION, 'You can save up to 20 addresses.');
+        const isDefault = count === 0 || Boolean(input.is_default) || Boolean(existing?.isDefault);
+        if (isDefault) await tx.address.updateMany({ where: { userId: user.id, isDefault: true }, data: { isDefault: false } });
+        if (id) await tx.address.update({ where: { id }, data: { ...values!, isDefault } });
+        else await tx.address.create({ data: { ...values!, userId: user.id, isDefault } });
+      } else if (operation === 'default') {
+        await tx.address.updateMany({ where: { userId: user.id, isDefault: true }, data: { isDefault: false } });
+        await tx.address.update({ where: { id }, data: { isDefault: true } });
+      } else {
+        await tx.address.delete({ where: { id } });
+        if (existing!.isDefault) {
+          const first = await tx.address.findFirst({ where: { userId: user.id }, orderBy: [{ createdAt: 'asc' }, { id: 'asc' }] });
+          if (first) await tx.address.update({ where: { id: first.id }, data: { isDefault: true } });
+        }
+      }
+      const addresses = await tx.address.findMany({ where: { userId: user.id }, orderBy: [{ createdAt: 'asc' }, { id: 'asc' }] });
+      return { addresses: addresses.map(address => this.addressView(address)) };
+    });
   }
   async logout({ token }: any) {
     const { jti } = await this.current(token);

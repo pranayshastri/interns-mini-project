@@ -16,6 +16,10 @@ service AuthService {
   rpc AdminCreateSeller (AdminCreateSellerRequest) returns (AdminCreateSellerResponse);
   rpc AdminShop (AdminUserRequest) returns (AdminShopResponse);
   rpc AdminHealth (ValidateTokenRequest) returns (AdminHealthResponse);
+  rpc ListAddresses (ValidateTokenRequest) returns (AddressList);
+  rpc SaveAddress (SaveAddressRequest) returns (AddressList);
+  rpc DeleteAddress (AddressIdRequest) returns (AddressList);
+  rpc SetDefaultAddress (AddressIdRequest) returns (AddressList);
   rpc Logout (ValidateTokenRequest) returns (LogoutResponse);
 }
 
@@ -45,8 +49,8 @@ message ValidateTokenResponse {
 
 // Additive extensions: preserve the original package, methods and field numbers.
 message RegisterRequest { string email = 1; string password = 2; string full_name = 3; }
-message UserProfile { string id = 1; string email = 2; string full_name = 3; string role = 4; string shop_id = 5; string status = 6; }
-message UpdateProfileRequest { string token = 1; string full_name = 2; }
+message UserProfile { string id = 1; string email = 2; string full_name = 3; string role = 4; string shop_id = 5; string status = 6; string phone = 7; }
+message UpdateProfileRequest { string token = 1; string full_name = 2; string phone = 3; bool update_phone = 4; }
 message LogoutResponse { bool success = 1; }
 
 message AdminUsersRequest { string token = 1; string search = 2; string role = 3; string status = 4; int32 page = 5; int32 limit = 6; }
@@ -62,3 +66,12 @@ message AdminHealthResponse { string checked_at = 1; bool database = 2; bool ses
 message AdminCreateSellerRequest { string token = 1; string email = 2; string password = 3; string full_name = 4; string shop_name = 5; string description = 6; }
 message AdminShopResponse { string id = 1; string owner_id = 2; string name = 3; string description = 4; string created_at = 5; }
 message AdminCreateSellerResponse { UserProfile user = 1; AdminShopResponse shop = 2; }
+
+message Address {
+  string id = 1; string label = 2; string recipient = 3; string phone = 4;
+  string line1 = 5; string line2 = 6; string city = 7; string state = 8;
+  string postal = 9; string country = 10; bool is_default = 11;
+}
+message AddressList { repeated Address addresses = 1; }
+message SaveAddressRequest { string token = 1; Address address = 2; }
+message AddressIdRequest { string token = 1; string id = 2; }

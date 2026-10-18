@@ -91,3 +91,7 @@ Passing local tests does not establish production readiness. Before release:
 `DATABASE_URL`, a strong random `JWT_SECRET` of at least 32 characters, Valkey configuration and mTLS credential paths must be injected by deployment. Build generates Prisma Client, but does not apply migrations. No email, payment or other commerce flow is implied by this account implementation.
 
 Password policy: the requested 8-character minimum is a product choice. MFA is not implemented; current OWASP guidance recommends 15 characters without MFA. Compromised-password screening is also pending. Mandatory character-class rules are not enforced.
+
+## Profile and saved addresses
+
+See [Profile and address setup](./PROFILE_ADDRESSES.md) for the additive migration, API additions, and browser verification steps. `npm run dev:auth` applies the migration automatically.

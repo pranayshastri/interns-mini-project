@@ -54,6 +54,7 @@ test('Auth/profile integration: PostgreSQL, Valkey, mTLS and GraphQL', { timeout
   await db.$executeRawUnsafe(`CREATE TABLE "${schema}".users (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), email VARCHAR(255) UNIQUE NOT NULL, password_hash VARCHAR(255) NOT NULL, role VARCHAR(32) NOT NULL, full_name VARCHAR(128) NOT NULL, shop_id UUID NULL)`);
   for (const sql of readFileSync(resolve(service, 'prisma/migrations/20261015_admin_accounts/migration.sql'), 'utf8').split(';').filter(s => s.trim())) await db.$executeRawUnsafe(sql);
   for (const sql of readFileSync(resolve(service, 'prisma/migrations/20261015_admin_shops/migration.sql'), 'utf8').split(';').filter(s => s.trim())) await db.$executeRawUnsafe(sql);
+  for (const sql of readFileSync(resolve(service, 'prisma/migrations/20261018_profile_addresses/migration.sql'), 'utf8').split(';').filter(s => s.trim())) await db.$executeRawUnsafe(sql);
   const prefix = `${schema}:`;
   const redis = new Redis({ host: process.env.AUTH_TEST_VALKEY_HOST || '127.0.0.1', port: Number(process.env.AUTH_TEST_VALKEY_PORT || 6379), maxRetriesPerRequest: 1 });
   redis.on('error', () => {});
@@ -131,6 +132,62 @@ test('Auth/profile integration: PostgreSQL, Valkey, mTLS and GraphQL', { timeout
     r = await gql(`mutation{updateProfile(fullName:"Ankit"){${userFields}}}`, {}, cookie);
     assert.equal(r.body.data.updateProfile.fullName, 'Ankit');
     assert.equal((await db.user.findUnique({ where: { id } })).fullName, 'Ankit');
+  });
+  await t.test('phone updates persist, omitted phone is preserved, and invalid input is rejected', async () => {
+    let r = await gql('mutation{updateProfile(fullName:"Ankit",phone:"+91 9876543210"){phone}}', {}, cookie);
+    assert.equal(r.body.data.updateProfile.phone, '+91 9876543210');
+    r = await gql('mutation{updateProfile(fullName:"Ankit"){phone}}', {}, cookie);
+    assert.equal(r.body.data.updateProfile.phone, '+91 9876543210');
+    assert.equal((await db.user.findUnique({ where: { id } })).phone, '+91 9876543210');
+    r = await gql('mutation{updateProfile(fullName:"Ankit",phone:"abc"){phone}}', {}, cookie);
+    assert.ok(r.body.errors);
+    r = await gql('mutation{updateProfile(fullName:"Ankit",phone:""){phone}}', {}, cookie);
+    assert.equal(r.body.data.updateProfile.phone, '');
+  });
+  await t.test('addresses persist, enforce ownership and validation, and serialize default changes', async () => {
+    const fields = 'id label recipient phone line1 line2 city state postal country isDefault';
+    const save = `mutation($input:AddressInput!){saveAddress(input:$input){${fields}}}`;
+    const input = { label: 'Home', recipient: 'Ankit', phone: '+91 9876543210', line1: 'Test building', line2: '', city: 'Test city', state: 'Test region', postal: '123456', country: 'India', isDefault: false };
+    let r = await gql(save, { input }, cookie);
+    assert.equal(r.body.errors, undefined, JSON.stringify(r.body));
+    const home = r.body.data.saveAddress[0];
+    assert.equal(home.isDefault, true);
+    assert.equal((await db.address.findUnique({ where: { id: home.id } })).userId, id);
+    r = await gql(save, { input: { ...input, label: 'Work' } }, cookie);
+    const work = r.body.data.saveAddress.find(a => a.label === 'Work');
+    assert.equal(work.isDefault, false);
+    r = await gql(save, { input: { ...input, id: home.id, line1: 'Updated building' } }, cookie);
+    assert.equal(r.body.data.saveAddress.find(a => a.id === home.id).line1, 'Updated building');
+    for (const invalid of [{ line1: '  ' }, { country: 'x'.repeat(101) }, { phone: 'abc' }]) {
+      r = await gql(save, { input: { ...input, ...invalid } }, cookie);
+      assert.ok(r.body.errors, 'Invalid address must be rejected');
+    }
+    const otherEmail = `address-other-${randomUUID()}@example.test`;
+    await gql('mutation($email:String!,$password:String!){register(email:$email,password:$password,fullName:"Other"){user{id}}}', { email: otherEmail, password });
+    const other = await gql('mutation($email:String!,$password:String!){login(email:$email,password:$password){user{id}}}', { email: otherEmail, password });
+    assert.ok(other.cookie);
+    r = await gql('query{myAddresses{id}}', {}, other.cookie);
+    assert.deepEqual(r.body.data.myAddresses, []);
+    for (const operation of ['deleteAddress', 'setDefaultAddress']) {
+      r = await gql(`mutation($id:ID!){${operation}(id:$id){id}}`, { id: home.id }, other.cookie);
+      assert.ok(r.body.errors, `${operation} cannot target another user`);
+    }
+    r = await gql(save, { input: { ...input, id: home.id } }, other.cookie);
+    assert.ok(r.body.errors);
+    r = await gql('query{myAddresses{id}}');
+    assert.equal(r.body.errors[0].extensions.code, 'UNAUTHENTICATED');
+    const outcomes = await Promise.all([home.id, work.id].map(addressId => gql('mutation($id:ID!){setDefaultAddress(id:$id){id isDefault}}', { id: addressId }, cookie)));
+    outcomes.forEach(result => assert.equal(result.body.errors, undefined, JSON.stringify(result.body)));
+    r = await gql(`query{myAddresses{${fields}}}`, {}, cookie);
+    assert.equal(r.body.data.myAddresses.filter(a => a.isDefault).length, 1);
+    const selected = r.body.data.myAddresses.find(a => a.isDefault);
+    r = await gql('mutation($id:ID!){deleteAddress(id:$id){id isDefault}}', { id: selected.id }, cookie);
+    assert.equal(r.body.data.deleteAddress.length, 1);
+    assert.equal(r.body.data.deleteAddress[0].isDefault, true);
+    r = await gql('mutation($id:ID!){deleteAddress(id:$id){id}}', { id: r.body.data.deleteAddress[0].id }, cookie);
+    assert.deepEqual(r.body.data.deleteAddress, []);
+    assert.equal(await db.address.count({ where: { userId: id } }), 0);
+    await gql('mutation{logout}', {}, other.cookie);
   });
   await t.test('anonymous, tampered token, extra role and cross-origin requests rejected', async () => {
     const anon = await gql('query{me{id}}'); assert.equal(anon.body.errors[0].extensions.code, 'UNAUTHENTICATED');
@@ -263,7 +320,11 @@ test('Auth/profile integration: PostgreSQL, Valkey, mTLS and GraphQL', { timeout
     assert.equal((await gql('query{adminHealth{database sessions}}', {}, adminCookie)).body.data.adminHealth.database, true);
   });
   if (process.env.AUTH_BROWSER_TEST === '1') await t.test('browser: customer, admin and shopkeeper login on desktop/mobile', { timeout: 180000 }, async () => {
-    const frontend = start(t, [require.resolve('next/dist/bin/next'), 'dev', '--hostname', '127.0.0.1', '--port', String(frontPort)], { cwd: resolve(root, 'apps/frontend'), env: { ...process.env, NODE_ENV: 'development', ROBONEST_AUTH_ENABLED: 'true', NEXT_DIST_DIR: '.next-test', API_GATEWAY_URL: `http://127.0.0.1:${gatewayPort}` } });
+    // Isolate the browser suite's rate-limit bucket from preceding API checks.
+    const browserGatewayPort = await freePort();
+    const browserGateway = start(t, ['dist/main.js'], { cwd: resolve(root, 'apps/api-gateway'), env: { ...env, PORT: String(browserGatewayPort), AUTH_SERVICE_ADDR: `localhost:${authPort}`, FRONTEND_ORIGIN: origin } });
+    await ready(browserGateway, 'Nest application successfully started');
+    const frontend = start(t, [require.resolve('next/dist/bin/next'), 'dev', '--hostname', '127.0.0.1', '--port', String(frontPort)], { cwd: resolve(root, 'apps/frontend'), env: { ...process.env, NODE_ENV: 'development', ROBONEST_AUTH_ENABLED: 'true', NEXT_DIST_DIR: '.next-test', API_GATEWAY_URL: `http://127.0.0.1:${browserGatewayPort}` } });
     await ready(frontend, 'Ready');
     const { chromium, expect } = require('@playwright/test');
     const browser = await chromium.launch({ ...(process.env.CHROME_PATH ? { executablePath: process.env.CHROME_PATH } : {}), headless: true });
@@ -299,11 +360,49 @@ test('Auth/profile integration: PostgreSQL, Valkey, mTLS and GraphQL', { timeout
       await page.locator('button[type="submit"]').click();
       await page.getByRole('button', { name: 'Sign out', exact: true }).waitFor();
       await page.getByLabel('Full name', { exact: true }).fill('Updated Customer');
+      await page.getByRole('textbox', { name: 'Phone number', exact: true }).fill('+91 9876543210');
       await page.getByRole('button', { name: 'Save changes' }).click();
       await page.getByText('Your profile has been saved.').waitFor();
       await page.reload(); await page.getByRole('button', { name: 'Sign out', exact: true }).waitFor();
       assert.equal(await page.getByLabel('Full name', { exact: true }).inputValue(), 'Updated Customer');
       await page.screenshot({ path: resolve(artifact, 'profile-desktop.png'), fullPage: true });
+      assert.equal(await page.getByRole('textbox', { name: 'Phone number', exact: true }).inputValue(), '+91 9876543210');
+      await page.getByRole('button', { name: /02 Saved addresses/ }).click();
+      await page.getByRole('button', { name: 'Add your first address' }).click();
+      const addressDialog = page.getByRole('dialog');
+      async function fillAddress(label) {
+        for (const [field, value] of Object.entries({ 'Address label': label, 'Recipient name': 'Browser Customer', 'Phone number': '+91 9876543210', 'Address line 1': 'Test building', City: 'Test city', 'State / region': 'Test region', 'Postal code': '123456', Country: 'India' })) await addressDialog.getByLabel(field, { exact: true }).fill(value);
+      }
+      await fillAddress('Home');
+      await addressDialog.getByRole('button', { name: 'Save address', exact: true }).click();
+      await expect(addressDialog).not.toBeVisible();
+      await page.reload();
+      await page.getByRole('button', { name: /02 Saved addresses/ }).click();
+      await expect(page.getByRole('heading', { name: 'Home', exact: true })).toBeVisible();
+      await expect(page.getByText('Default delivery', { exact: true })).toBeVisible();
+      await page.getByRole('button', { name: 'Edit Home', exact: true }).click();
+      await addressDialog.getByLabel('Address line 1', { exact: true }).fill('Updated delivery building');
+      await addressDialog.getByRole('button', { name: 'Save address', exact: true }).click();
+      await expect(addressDialog).not.toBeVisible();
+      await expect(page.getByText(/Updated delivery building/)).toBeVisible();
+      await page.getByRole('button', { name: '+ Add address', exact: true }).click();
+      await fillAddress('Work');
+      await addressDialog.getByRole('button', { name: 'Save address', exact: true }).click();
+      await expect(addressDialog).not.toBeVisible();
+      await page.getByRole('button', { name: 'Set as default', exact: true }).click();
+      await expect(page.getByRole('article').filter({ has: page.getByRole('heading', { name: 'Work', exact: true }) })).toContainText('Default delivery');
+      await page.setViewportSize({ width: 390, height: 844 });
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
+      await page.screenshot({ path: resolve(artifact, 'addresses-mobile.png'), fullPage: true });
+      await page.getByRole('button', { name: 'Delete Work', exact: true }).click();
+      await addressDialog.getByRole('button', { name: 'Delete address', exact: true }).click();
+      await expect(addressDialog).not.toBeVisible();
+      await page.reload();
+      await page.getByRole('button', { name: /02 Saved addresses/ }).click();
+      await expect(page.getByRole('heading', { name: 'Work', exact: true })).toHaveCount(0);
+      await expect(page.getByText('Default delivery', { exact: true })).toBeVisible();
+      await page.setViewportSize({ width: 1440, height: 1000 });
+      await page.screenshot({ path: resolve(artifact, 'addresses-desktop.png'), fullPage: true });
       const sessionCookies = await page.context().cookies(); assert.ok(sessionCookies.find(c => c.name === 'shop_session')?.httpOnly);
       await page.getByRole('button', { name: 'Sign out', exact: true }).click();
       await page.getByRole('button', { name: 'Sign in', exact: true }).first().waitFor();

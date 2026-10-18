@@ -1,5 +1,5 @@
 // Baseline gateway types. Optional presentation fields are proposed extensions.
-export type User = { id: string; fullName: string; email: string; role: string; shopId: string | null };
+export type User = { id: string; fullName: string; phone?: string; email: string; role: string; shopId: string | null };
 export type Product = { id: string; shopId: string; name: string; description: string; priceCents: number; availableStock: number; image?: string; category?: string; pack?: string; seller?: string };
 export type CartItem = { productId: string; quantity: number };
 export type OrderItem = CartItem & { shopId: string; unitPriceCents: number; name?: string };

@@ -24,6 +24,8 @@ model User {
   passwordHash String  @map("password_hash") @db.VarChar(255)
   role         String  @db.VarChar(32)
   fullName     String  @map("full_name") @db.VarChar(128)
+  phone        String @default("") @db.VarChar(32)
+  addresses    Address[]
   shopId       String? @map("shop_id") @db.Uuid
 
   status String @default("ACTIVE") @db.VarChar(16)
@@ -57,4 +59,23 @@ model Shop {
   description String @db.VarChar(1000)
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
   @@map("shops")
+}
+
+model Address {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId String @map("user_id") @db.Uuid
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  label String @db.VarChar(80)
+  recipient String @db.VarChar(128)
+  phone String @db.VarChar(32)
+  line1 String @db.VarChar(200)
+  line2 String @default("") @db.VarChar(200)
+  city String @db.VarChar(100)
+  state String @db.VarChar(100)
+  postal String @db.VarChar(32)
+  country String @db.VarChar(100)
+  isDefault Boolean @default(false) @map("is_default")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  @@index([userId])
+  @@map("addresses")
 }

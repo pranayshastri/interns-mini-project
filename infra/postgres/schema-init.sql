@@ -32,6 +32,26 @@ CREATE TABLE IF NOT EXISTS admin_audit_events (
 CREATE INDEX IF NOT EXISTS users_role_status_id_idx ON users(role, status, id);
 CREATE INDEX IF NOT EXISTS admin_audit_created_id_idx ON admin_audit_events(created_at DESC, id);
 
+-- Personal delivery addresses belong to Auth, independently of shop addresses.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS phone VARCHAR(32) NOT NULL DEFAULT '';
+CREATE TABLE IF NOT EXISTS addresses (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  label VARCHAR(80) NOT NULL,
+  recipient VARCHAR(128) NOT NULL,
+  phone VARCHAR(32) NOT NULL,
+  line1 VARCHAR(200) NOT NULL,
+  line2 VARCHAR(200) NOT NULL DEFAULT '',
+  city VARCHAR(100) NOT NULL,
+  state VARCHAR(100) NOT NULL,
+  postal VARCHAR(32) NOT NULL,
+  country VARCHAR(100) NOT NULL,
+  is_default BOOLEAN NOT NULL DEFAULT false,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS addresses_user_id_idx ON addresses(user_id);
+CREATE UNIQUE INDEX IF NOT EXISTS addresses_one_default_per_user ON addresses(user_id) WHERE is_default = true;
+
 -- Seed 3 Users in ecommerce_auth_db (Password: 'Password123', bcrypt cost 12)
 INSERT INTO users (id, email, password_hash, role, full_name, shop_id) VALUES
 ('a0000000-0000-0000-0000-000000000001', 'admin@shopping.com', '$2a$12$180.JGq7G31G9VZNMrB6sewBP197DUWsMxpCpwSgLqCLqgtTz9cia', 'ADMIN', 'Platform Admin', NULL),
