@@ -66,7 +66,7 @@ export function AdminWorkspace({ preview = false }: { preview?: boolean }) {
   return (
     <div className={styles.workspace}>
       <aside className={styles.sidebar}>
-        <BrandLogo />
+        <BrandLogo className={styles.brand} />
         <div className={styles.workspaceLabel}>
           <span className={styles.workspaceIcon}>
             <Icon name="grid" size={17} />

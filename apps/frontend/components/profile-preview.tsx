@@ -221,7 +221,7 @@ export function AccountProfile({ preview = false }: { preview?: boolean }) {
   return (
     <div className={styles.page}>
       <div className={styles.brand}>
-        <BrandLogo />
+        <BrandLogo className="" />
         <small>YOUR ACCOUNT</small>
       </div>
       {preview && (
