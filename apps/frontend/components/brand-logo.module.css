@@ -1,0 +1,10 @@
+.logo { display: inline-flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.logo img { display: block; width: 34px; height: 34px; flex-shrink: 0; }
+.wordmark { font: inherit; color: inherit; letter-spacing: inherit; }
+.logo:focus-visible { outline: 3px solid #0865dc; outline-offset: 4px; }
+.logo .wordmark:last-child { color: inherit; }
+.wordmark > span { margin-left: 0; color: var(--brand, #2165e8); }
+.logo .wordmark { transition: color 150ms ease; }
+.logo:hover .wordmark:last-child,
+.logo:focus-visible .wordmark:last-child { color: var(--brand, #2165e8); }
+@media (prefers-reduced-motion: reduce) { .logo .wordmark { transition: none; } }

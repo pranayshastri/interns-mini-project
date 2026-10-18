@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import Link from "next/link";
+import { BrandLogo } from "./brand-logo";
 import { useRouter } from "next/navigation";
 import { useApp } from "./providers";
 import { accountRequest, type JsonValue } from "../lib/graphql-client";
@@ -220,9 +221,7 @@ export function AccountProfile({ preview = false }: { preview?: boolean }) {
   return (
     <div className={styles.page}>
       <div className={styles.brand}>
-        <Link href="/">
-          robonest<span>.</span>
-        </Link>
+        <BrandLogo className="" />
         <small>YOUR ACCOUNT</small>
       </div>
       {preview && (

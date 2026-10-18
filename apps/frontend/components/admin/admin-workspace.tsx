@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { BrandLogo } from "../brand-logo";
 import { useRef, useState } from "react";
 import { Icon } from "../layout/icons";
 import { useApp } from "../providers";
@@ -65,9 +66,7 @@ export function AdminWorkspace({ preview = false }: { preview?: boolean }) {
   return (
     <div className={styles.workspace}>
       <aside className={styles.sidebar}>
-        <Link href="/" className={styles.brand}>
-          <span className={styles.brandMark}>r</span>robonest<span>.</span>
-        </Link>
+        <BrandLogo className={styles.brand} />
         <div className={styles.workspaceLabel}>
           <span className={styles.workspaceIcon}>
             <Icon name="grid" size={17} />
