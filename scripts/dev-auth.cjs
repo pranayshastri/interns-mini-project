@@ -64,6 +64,7 @@ async function main() {
   await command('npm', ['run', commerce ? 'prisma:generate' : 'build', ...names.map(name => `--workspace=${name}-service`), ...(commerce ? [] : ['--workspace=api-gateway'])]);
   console.log('Applying additive admin account schema (existing data preserved)…');
   await command('npm', ['run', 'schema:admin', '--workspace=auth-service'], { ...process.env, DATABASE_URL: databaseUrl });
+  await command('npm', ['run', 'schema:profile', '--workspace=auth-service'], { ...process.env, DATABASE_URL: databaseUrl });
   const { PrismaClient } = require('../apps/auth-service/generated/prisma');
   const db = new PrismaClient({ datasourceUrl: databaseUrl });
   try { await db.user.findFirst({ select: { id: true } }); }

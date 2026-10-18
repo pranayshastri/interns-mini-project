@@ -22,7 +22,7 @@ export function Providers({ config, children }: { config: Config; children: Reac
   }, []);
   const refreshUser = useCallback(async (required = false) => {
     if (!config.auth) return;
-    try { const data = await accountRequest<{ me: User }>('query { me { id fullName email role shopId } }'); identity.current = data.me; setUser(data.me); setAuthError(''); }
+    try { const data = await accountRequest<{ me: User }>('query { me { id fullName email role shopId phone } }'); identity.current = data.me; setUser(data.me); setAuthError(''); }
     catch (e) { expire(); setAuthError(e instanceof AccountError && e.code === 'UNAUTHENTICATED' ? '' : e instanceof Error ? e.message : 'Unable to load your account.'); if (required) throw e; }
     finally { setAuthLoading(false); }
   }, [config, expire]);

@@ -21,6 +21,7 @@ export function StoreShell({ children }: { children: ReactNode }) {
   const [search, setSearch] = useState('');
   function submit(e: FormEvent) { e.preventDefault(); router.push(`/products?q=${encodeURIComponent(search.trim())}`); }
   const seller = pathname.startsWith('/seller');
+  if (pathname === '/profile-preview' || pathname === '/profile') return <main id="main-content" key={privateVersion}>{children}</main>;
   if (pathname === '/admin' || pathname.startsWith('/admin/') || pathname === '/admin-preview') return <><a className="skip-link" href="#main-content">Skip to content</a><main id="main-content" key={privateVersion}>{children}</main></>;
   if (['/login', '/signup', '/profile'].includes(pathname)) return <div className="auth-layout"><a className="skip-link" href="#main-content">Skip to content</a><header className="auth-header"><Link className="brand" href="/login">robonest.</Link><span>Your account</span></header><main id="main-content" className="auth-main" key={privateVersion}>{children}</main><footer className="auth-footer">RoboNest account access</footer></div>;
 

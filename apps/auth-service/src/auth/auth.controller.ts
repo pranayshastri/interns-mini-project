@@ -26,5 +26,9 @@ export class AuthController {
   @GrpcMethod('AuthService', 'AdminCreateSeller') adminCreateSeller(data: any) { return this.safe(() => this.auth.adminCreateSeller(data)); }
   @GrpcMethod('AuthService', 'AdminShop') adminShop(data: any) { return this.safe(() => this.auth.adminShop(data)); }
   @GrpcMethod('AuthService', 'AdminHealth') adminHealth(data: any) { return this.safe(() => this.auth.adminHealth(data)); }
+  @GrpcMethod('AuthService', 'ListAddresses') addresses(data: any) { return this.safe(() => this.auth.listAddresses(data)); }
+  @GrpcMethod('AuthService', 'SaveAddress') saveAddress(data: any) { return this.safe(() => this.auth.changeAddress(data, 'save')); }
+  @GrpcMethod('AuthService', 'DeleteAddress') deleteAddress(data: any) { return this.safe(() => this.auth.changeAddress(data, 'delete')); }
+  @GrpcMethod('AuthService', 'SetDefaultAddress') defaultAddress(data: any) { return this.safe(() => this.auth.changeAddress(data, 'default')); }
   @GrpcMethod('AuthService', 'Logout') logout(data: any) { return this.safe(() => this.auth.logout(data)); }
 }
