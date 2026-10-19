@@ -103,7 +103,7 @@ async function main() {
   }
   const addresses = Object.fromEntries(names.map(name => [`${name.toUpperCase()}_SERVICE_ADDR`, `localhost:${ports[name]}`]));
   await service('Gateway', path.join(root, 'apps/api-gateway'), serverArgs, { ...env, ...addresses, PORT: String(ports.gateway), FRONTEND_ORIGIN: `${origin},http://localhost:${ports.frontend}` }, 'Nest application successfully started');
-  await service('Frontend', path.join(root, 'apps/frontend'), [require.resolve('next/dist/bin/next'), 'dev', '--hostname', '127.0.0.1', '--port', String(ports.frontend)], { ...env, ROBONEST_AUTH_ENABLED: 'true', ROBONEST_VERIFIED_CAPABILITIES: commerce ? 'products,product,stock,order,createOrder' : '', API_GATEWAY_URL: `http://127.0.0.1:${ports.gateway}`, NEXT_DIST_DIR: `.next-auth-local-${ports.frontend}` }, 'Ready');
+  await service('Frontend', path.join(root, 'apps/frontend'), [require.resolve('next/dist/bin/next'), 'dev', '--hostname', '127.0.0.1', '--port', String(ports.frontend)], { ...env, ROBONEST_AUTH_ENABLED: 'true', ROBONEST_VERIFIED_CAPABILITIES: commerce ? 'products,product,stock,order,createOrder,createProduct' : '', API_GATEWAY_URL: `http://127.0.0.1:${ports.gateway}`, NEXT_DIST_DIR: `.next-auth-local-${ports.frontend}` }, 'Ready');
   const response = await fetch(`${origin}/graphql`, { method: 'POST', headers: { 'Content-Type':'application/json', Origin:origin, Cookie:'shop_session=startup-readiness-invalid-token' }, body: JSON.stringify({ query:'query { me { id } }' }) });
   const body = await response.json();
   if (body.errors?.[0]?.extensions?.code !== 'UNAUTHENTICATED') throw new Error('Frontend → gateway → mTLS Auth readiness check failed.');
