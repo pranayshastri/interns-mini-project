@@ -3,4 +3,5 @@ export declare const PROTO_PATHS: {
   catalog: string;
   order: string;
   inventory: string;
+  notification: string;
 };

@@ -53,9 +53,9 @@ async function main() {
   const databaseUrl = template.replace(/\$\{(\w+)\}/g, (_, key) => { if (!settings[key]) throw new Error(`Missing ${key} for database configuration.`); return settings[key]; });
   if (!settings.JWT_SECRET || settings.JWT_SECRET.length < 32) throw new Error('Set JWT_SECRET to a random secret of at least 32 characters in root .env.');
   const certDir = path.join(root, 'infra/certs');
-  const names = ['auth', ...(commerce ? ['catalog', 'inventory', 'order'] : [])];
+  const names = ['auth', ...(commerce ? ['catalog', 'inventory', 'order', 'notification'] : [])];
   for (const file of ['ca.crt', ...[...names, 'api-gateway'].flatMap(name => { const identity = name === 'api-gateway' ? name : `${name}-service`; return [`${identity}.crt`, `${identity}.key`]; })]) if (!fs.existsSync(path.join(certDir, file))) throw new Error(`Missing infra/certs/${file}. Coordinate development certificates with the team; this launcher will not overwrite your CA.`);
-  const ports = { frontend: Number(settings.AUTH_LOCAL_FRONTEND_PORT || 3000), gateway: Number(settings.AUTH_LOCAL_GATEWAY_PORT || 4000), auth: Number(settings.AUTH_LOCAL_GRPC_PORT || 50051), ...(commerce ? { catalog: Number(settings.CATALOG_SERVICE_PORT || 50052), order: Number(settings.ORDER_SERVICE_PORT || 50053), inventory: Number(settings.INVENTORY_SERVICE_PORT || 50054) } : {}) };
+  const ports = { frontend: Number(settings.AUTH_LOCAL_FRONTEND_PORT || 3000), gateway: Number(settings.AUTH_LOCAL_GATEWAY_PORT || 4000), auth: Number(settings.AUTH_LOCAL_GRPC_PORT || 50051), ...(commerce ? { catalog: Number(settings.CATALOG_SERVICE_PORT || 50052), order: Number(settings.ORDER_SERVICE_PORT || 50053), inventory: Number(settings.INVENTORY_SERVICE_PORT || 50054), notification: Number(settings.NOTIFICATION_SERVICE_PORT || 50055) } : {}) };
   if (new Set(Object.values(ports)).size !== Object.keys(ports).length) throw new Error('Local services must use distinct ports.');
   for (const port of Object.values(ports)) { if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('Invalid local port.'); await portFree(port); }
   const origin = `http://127.0.0.1:${ports.frontend}`;
@@ -80,6 +80,19 @@ async function main() {
     fallback.pathname = `/ecommerce_${name}_db`;
     fallback.searchParams.delete('schema');
     const url = settings[key] ? settings[key].replace(/\$\{(\w+)\}/g, (_, variable) => { if (!settings[variable]) throw new Error(`Missing ${variable} for ${key}.`); return settings[variable]; }) : fallback.toString();
+    // Ensure the target database exists on already-created volumes (init-multi-db.sh
+    // only runs once, when the postgres volume is first provisioned).
+    const { PrismaClient: AdminDb } = require('../apps/auth-service/generated/prisma');
+    const adminDb = new AdminDb({ datasourceUrl: databaseUrl });
+    try {
+      const dbName = new URL(url).pathname.replace(/^\//, '');
+      const exists = await adminDb.$queryRawUnsafe(
+        `SELECT 1 FROM pg_database WHERE datname = '${dbName}'`,
+      );
+      if (exists.length === 0) {
+        await adminDb.$executeRawUnsafe(`CREATE DATABASE "${dbName}"`);
+      }
+    } finally { await adminDb.$disconnect(); }
     // Reuse the canonical table definitions for older, already-created volumes.
     // Only additive DDL is selected; sample INSERT statements are never executed.
     const schemaSql = fs.readFileSync(path.join(root, 'infra/postgres/schema-init.sql'), 'utf8');
@@ -99,11 +112,12 @@ async function main() {
       ...env, PORT: String(ports[name]), DATABASE_URL: url,
       KAFKA_BROKERS: settings.KAFKA_BROKER_EXTERNAL || 'localhost:9094',
       TLS_CA_PATH: path.join(certDir, 'ca.crt'), TLS_CERT_PATH: path.join(certDir, `${name}-service.crt`), TLS_KEY_PATH: path.join(certDir, `${name}-service.key`),
-    }, name === 'inventory' ? 'Inventory Service (gRPC + mTLS) listening' : `${name === 'catalog' ? 'Catalog' : 'Order'} Service gRPC server listening`);
+    }, name === 'inventory' ? 'Inventory Service (gRPC + mTLS) listening' : name === 'notification' ? 'Notification Service (gRPC + mTLS) listening' : `${name === 'catalog' ? 'Catalog' : 'Order'} Service gRPC server listening`);
   }
   const addresses = Object.fromEntries(names.map(name => [`${name.toUpperCase()}_SERVICE_ADDR`, `localhost:${ports[name]}`]));
   await service('Gateway', path.join(root, 'apps/api-gateway'), serverArgs, { ...env, ...addresses, PORT: String(ports.gateway), FRONTEND_ORIGIN: `${origin},http://localhost:${ports.frontend}` }, 'Nest application successfully started');
   await service('Frontend', path.join(root, 'apps/frontend'), [require.resolve('next/dist/bin/next'), 'dev', '--hostname', '127.0.0.1', '--port', String(ports.frontend)], { ...env, ROBONEST_AUTH_ENABLED: 'true', ROBONEST_VERIFIED_CAPABILITIES: commerce ? 'products,product,stock,order,createOrder,createProduct,myProducts' : '', API_GATEWAY_URL: `http://127.0.0.1:${ports.gateway}`, NEXT_DIST_DIR: `.next-auth-local-${ports.frontend}` }, 'Ready');
+  await service('Frontend', path.join(root, 'apps/frontend'), [require.resolve('next/dist/bin/next'), 'dev', '--hostname', '127.0.0.1', '--port', String(ports.frontend)], { ...env, ROBONEST_AUTH_ENABLED: 'true', ROBONEST_VERIFIED_CAPABILITIES: commerce ? 'products,product,stock,order,createOrder,notifications' : '', API_GATEWAY_URL: `http://127.0.0.1:${ports.gateway}`, NEXT_DIST_DIR: `.next-auth-local-${ports.frontend}` }, 'Ready');
   const response = await fetch(`${origin}/graphql`, { method: 'POST', headers: { 'Content-Type':'application/json', Origin:origin, Cookie:'shop_session=startup-readiness-invalid-token' }, body: JSON.stringify({ query:'query { me { id } }' }) });
   const body = await response.json();
   if (body.errors?.[0]?.extensions?.code !== 'UNAUTHENTICATED') throw new Error('Frontend → gateway → mTLS Auth readiness check failed.');

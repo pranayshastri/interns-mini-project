@@ -11,11 +11,13 @@ import { CatalogResolver } from './resolvers/catalog.resolver';
 import { CatalogMutationResolver } from './resolvers/catalog-mutation.resolver';
 import { InventoryResolver } from './resolvers/inventory.resolver';
 import { commerceTypeDefs } from './resolvers/commerce.types';
+import { NotificationClient } from './grpc/notification-client.service';
+import { NotificationResolver, notificationTypeDefs } from './resolvers/notification.resolver';
 
 @Module({
   imports: [GraphQLModule.forRoot<ApolloDriverConfig>({
     driver: ApolloDriver,
-    typeDefs: [authTypeDefs, orderTypeDefs, commerceTypeDefs],
+    typeDefs: [authTypeDefs, orderTypeDefs, commerceTypeDefs, notificationTypeDefs],
     playground: false,
     introspection: process.env.NODE_ENV !== 'production',
     csrfPrevention: true,
@@ -24,6 +26,7 @@ import { commerceTypeDefs } from './resolvers/commerce.types';
     formatError: error => ({ message: error.extensions?.code === 'INTERNAL_SERVER_ERROR' ? 'Something went wrong. Please try again.' : error.message, extensions: { code: error.extensions?.code } }),
   })],
   providers: [AuthClient, AuthResolver, OrderClient, OrderResolver, CommerceClient, CatalogResolver, CatalogMutationResolver, InventoryResolver],
+  providers: [AuthClient, AuthResolver, OrderClient, OrderResolver, CommerceClient, CatalogResolver, InventoryResolver, NotificationClient, NotificationResolver],
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {

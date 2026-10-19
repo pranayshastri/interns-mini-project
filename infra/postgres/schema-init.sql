@@ -128,3 +128,29 @@ CREATE TABLE IF NOT EXISTS outbox_events (
 );
 
 CREATE INDEX IF NOT EXISTS idx_outbox_pending ON outbox_events(status, created_at) WHERE status = 'PENDING';
+
+-- 5. NOTIFICATION SERVICE DATABASE (In-App Inbox)
+\c ecommerce_notification_db;
+
+CREATE TABLE IF NOT EXISTS notifications (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NULL,                       -- recipient user (e.g. customer)
+    shop_id UUID NULL,                       -- recipient shop (shopkeeper inbox)
+    type VARCHAR(64) NOT NULL,               -- 'ORDER_PLACED_CUSTOMER' | 'ORDER_RECEIVED_SHOPKEEPER'
+    title VARCHAR(255) NOT NULL,
+    body TEXT NOT NULL,
+    data_json TEXT NOT NULL DEFAULT '{}',    -- JSON: orderId, totalAmountCents, units, ...
+    read_at TIMESTAMP WITH TIME ZONE NULL,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CHECK (user_id IS NOT NULL OR shop_id IS NOT NULL)
+);
+
+CREATE INDEX IF NOT EXISTS notifications_user_created_idx ON notifications(user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS notifications_shop_created_idx ON notifications(shop_id, created_at DESC);
+
+-- Idempotent consumer ledger (same pattern as ecommerce_inventory_db)
+CREATE TABLE IF NOT EXISTS inbox_events (
+    event_id UUID PRIMARY KEY,
+    event_type VARCHAR(64) NOT NULL,
+    processed_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
