@@ -8,6 +8,7 @@ import { OrderClient } from './grpc/order-client.service';
 import { OrderResolver, orderTypeDefs } from './resolvers/order.resolver';
 import { CommerceClient } from './grpc/commerce-client.service';
 import { CatalogResolver } from './resolvers/catalog.resolver';
+import { CatalogMutationResolver } from './resolvers/catalog-mutation.resolver';
 import { InventoryResolver } from './resolvers/inventory.resolver';
 import { commerceTypeDefs } from './resolvers/commerce.types';
 import { NotificationClient } from './grpc/notification-client.service';
@@ -24,6 +25,7 @@ import { NotificationResolver, notificationTypeDefs } from './resolvers/notifica
     context: ({ req, res }) => ({ req, res }),
     formatError: error => ({ message: error.extensions?.code === 'INTERNAL_SERVER_ERROR' ? 'Something went wrong. Please try again.' : error.message, extensions: { code: error.extensions?.code } }),
   })],
+  providers: [AuthClient, AuthResolver, OrderClient, OrderResolver, CommerceClient, CatalogResolver, CatalogMutationResolver, InventoryResolver],
   providers: [AuthClient, AuthResolver, OrderClient, OrderResolver, CommerceClient, CatalogResolver, InventoryResolver, NotificationClient, NotificationResolver],
 })
 export class AppModule implements NestModule {

@@ -5,6 +5,7 @@ option go_package = "github.com/platform/gen/catalogv1";
 service CatalogService {
   rpc CreateProduct (CreateProductRequest) returns (ProductResponse);
   rpc ListProducts (ListProductsRequest) returns (ListProductsResponse);
+  rpc ListProductsByShop (ListProductsByShopRequest) returns (ListProductsResponse);
   rpc GetProduct (GetProductRequest) returns (ProductResponse);
 }
 
@@ -28,6 +29,12 @@ message ProductResponse {
 message ListProductsRequest {
   int32 page = 1;
   int32 limit = 2;
+}
+
+message ListProductsByShopRequest {
+  string shop_id = 1;
+  int32 page = 2;
+  int32 limit = 3;
 }
 
 message ListProductsResponse {

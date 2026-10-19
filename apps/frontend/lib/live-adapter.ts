@@ -14,7 +14,12 @@ export function liveAdapter(config: Config): CommerceAdapter {
     async products() { requireCapability('products'); return (await accountRequest<{ products: Product[] }>(`query { products { ${productFields} } }`)).products; },
     async product(id) { requireCapability('product'); return (await accountRequest<{ product: Product }>(`query($id:ID!){product(id:$id){${productFields}}}`, { id })).product; },
     async stock(id) { requireCapability('stock'); return (await accountRequest<{ stock: number }>('query($id:ID!){stock(productId:$id)}', { id })).stock; },
-    myProducts: unavailable,
+    async myProducts() {
+      requireCapability('myProducts');
+      return (await accountRequest<{ myProducts: Product[] }>(
+        `query { myProducts { ${productFields} } }`
+      )).myProducts;
+    },
     async createProduct(input) { requireCapability('createProduct'); return (await accountRequest<{ createProduct: Product }>(`mutation($name:String!,$description:String!,$priceCents:Int!,$initialStock:Int!){createProduct(name:$name,description:$description,priceCents:$priceCents,initialStock:$initialStock){${productFields}}}`, { ...input })).createProduct; },
     updateProduct: unavailable, updateStock: unavailable, orders: unavailable,
     async order(id) { requireCapability('order'); return (await accountRequest<{ order: Order | null }>(`query($id:ID!){order(id:$id){${orderFields}}}`, { id })).order; },

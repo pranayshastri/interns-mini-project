@@ -121,6 +121,40 @@ export class CatalogService {
     return result;
   }
 
+  async listProductsByShop(shopId: string, page = 1, limit = 50) {
+    if (typeof shopId !== 'string' || !shopId.trim() || !validUuid(shopId.trim())) {
+      throw new BadRequestException('A valid shop UUID is required');
+    }
+
+    if (
+      !Number.isInteger(page) ||
+      !Number.isInteger(limit) ||
+      page < 1 ||
+      limit < 1 ||
+      limit > 100
+    ) {
+      throw new BadRequestException(
+        'page must be positive and limit must be between 1 and 100',
+      );
+    }
+
+    const products = await this.prisma.product.findMany({
+      where: { shopId: shopId.trim() },
+      skip: (page - 1) * limit,
+      take: limit,
+      orderBy: { createdAt: 'desc' },
+    });
+
+    return products.map((product) => ({
+      id: product.id,
+      shop_id: product.shopId,
+      name: product.name,
+      description: product.description,
+      price_cents: product.priceCents.toString(),
+      created_at: product.createdAt,
+    }));
+  }
+
   async getProduct(productId: string) {
     if (
       typeof productId !== 'string' ||
