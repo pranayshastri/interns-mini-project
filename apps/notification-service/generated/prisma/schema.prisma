@@ -1,0 +1,45 @@
+// Prisma Schema for Notification Service (Database: ecommerce_notification_db)
+//
+// ARCHITECTURE NOTE:
+// Second Kafka consumer of shop.orders.v1 (own consumer group) producing an
+// in-app notification inbox. Idempotent consumption uses inbox_events exactly
+// like the Inventory Service (ARCHITECTURE.md Section 4.4).
+// Connects to PostgreSQL database: ecommerce_notification_db.
+//
+// A notification is addressed either to a user (user_id, e.g. the customer)
+// or to a shop (shop_id, resolved against the caller's session by the API
+// Gateway) - never both, never neither.
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Notification {
+  id        String    @id @default(dbgenerated("gen_random_uuid()"))
+  userId    String?   @map("user_id")
+  shopId    String?   @map("shop_id")
+  type      String
+  title     String
+  body      String
+  dataJson  String    @default("{}") @map("data_json")
+  readAt    DateTime? @map("read_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([shopId, createdAt(sort: Desc)])
+  @@map("notifications")
+}
+
+model InboxEvent {
+  eventId     String   @id @map("event_id")
+  eventType   String   @map("event_type")
+  processedAt DateTime @default(now()) @map("processed_at")
+
+  @@map("inbox_events")
+}

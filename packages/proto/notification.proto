@@ -1,0 +1,53 @@
+syntax = "proto3";
+package shop.notification.v1;
+option go_package = "github.com/platform/gen/notificationv1";
+
+service NotificationService {
+  rpc ListNotifications (ListNotificationsRequest) returns (ListNotificationsResponse);
+  rpc UnreadCount (UnreadCountRequest) returns (UnreadCountResponse);
+  rpc MarkRead (MarkReadRequest) returns (Notification);
+}
+
+message Notification {
+  string id = 1;
+  string user_id = 2;   // set when addressed to a user (e.g. customer)
+  string shop_id = 3;   // set when addressed to a shop (shopkeeper inbox)
+  string type = 4;      // ORDER_PLACED_CUSTOMER | ORDER_RECEIVED_SHOPKEEPER
+  string title = 5;
+  string body = 6;
+  string data_json = 7; // JSON string: orderId, totalAmountCents, units, ...
+  bool read = 8;
+  string created_at = 9; // ISO-8601 UTC
+  string read_at = 10;   // ISO-8601 UTC; empty while unread
+}
+
+message ListNotificationsRequest {
+  string user_id = 1;   // caller identity, resolved by the gateway from the session
+  string shop_id = 2;   // caller's shop (empty for customers)
+  bool unread_only = 3;
+  int32 page = 4;       // 1-based; defaults to 1
+  int32 limit = 5;      // defaults to 20, capped at 50
+}
+
+message ListNotificationsResponse {
+  repeated Notification notifications = 1;
+  int32 total = 2;
+  int32 unread_count = 3;
+  int32 page = 4;
+  int32 limit = 5;
+}
+
+message UnreadCountRequest {
+  string user_id = 1;
+  string shop_id = 2;
+}
+
+message UnreadCountResponse {
+  int32 count = 1;
+}
+
+message MarkReadRequest {
+  string notification_id = 1;
+  string user_id = 2;
+  string shop_id = 3; // ownership scope, mirrors ListNotificationsRequest
+}

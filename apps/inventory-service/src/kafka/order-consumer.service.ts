@@ -201,7 +201,7 @@ export class OrderConsumerService
     await this.prisma.$transaction(async (tx) => {
       const insertResult = await tx.$executeRaw`
         INSERT INTO inbox_events (event_id, event_type)
-        VALUES (${eventId}, 'OrderCreated')
+        VALUES (${eventId}::uuid, 'OrderCreated')
         ON CONFLICT (event_id) DO NOTHING
       `;
 
@@ -228,7 +228,7 @@ export class OrderConsumerService
         const updateResult = await tx.$executeRaw`
           UPDATE product_inventory
           SET available_stock = available_stock - ${quantity}
-          WHERE product_id = ${productId} AND available_stock >= ${quantity}
+          WHERE product_id = ${productId}::uuid AND available_stock >= ${quantity}
         `;
 
         const updated = Number(updateResult);

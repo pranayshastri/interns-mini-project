@@ -77,6 +77,16 @@
         "dist/**",
         "generated/prisma/**"
       ]
+    },
+    "notification-service#build": {
+      "dependsOn": [
+        "^build"
+      ],
+      "cache": false,
+      "outputs": [
+        "dist/**",
+        "generated/prisma/**"
+      ]
     }
   },
   "globalEnv": [
