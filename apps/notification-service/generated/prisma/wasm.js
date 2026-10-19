@@ -142,7 +142,7 @@ const config = {
       "value": "prisma-client-js"
     },
     "output": {
-      "value": "/home/bbraw/e-commerce/interns-mini-project/apps/notification-service/generated/prisma",
+      "value": "/home/ankit/pro/dezinetproject/interns-mini-project/apps/notification-service/generated/prisma",
       "fromEnvVar": null
     },
     "config": {
@@ -156,7 +156,7 @@ const config = {
       }
     ],
     "previewFeatures": [],
-    "sourceFilePath": "/home/bbraw/e-commerce/interns-mini-project/apps/notification-service/prisma/schema.prisma",
+    "sourceFilePath": "/home/ankit/pro/dezinetproject/interns-mini-project/apps/notification-service/prisma/schema.prisma",
     "isCustomOutput": true
   },
   "relativeEnvPaths": {
