@@ -48,6 +48,7 @@ generate_cert "auth-service" "DNS:auth-service,DNS:localhost,IP:127.0.0.1"
 generate_cert "catalog-service" "DNS:catalog-service,DNS:localhost,IP:127.0.0.1"
 generate_cert "order-service" "DNS:order-service,DNS:localhost,IP:127.0.0.1"
 generate_cert "inventory-service" "DNS:inventory-service,DNS:localhost,IP:127.0.0.1"
+generate_cert "notification-service" "DNS:notification-service,DNS:localhost,IP:127.0.0.1"
 generate_cert "api-gateway" "DNS:api-gateway,DNS:localhost,IP:127.0.0.1"
 
 # Generate an UNTRUSTED certificate to test failure cases!

@@ -20,7 +20,7 @@ services:
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-ecommerce_admin}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_MULTIPLE_DATABASES: ${POSTGRES_MULTIPLE_DATABASES:-ecommerce_auth_db,ecommerce_catalog_db,ecommerce_order_db,ecommerce_inventory_db}
+      POSTGRES_MULTIPLE_DATABASES: ${POSTGRES_MULTIPLE_DATABASES:-ecommerce_auth_db,ecommerce_catalog_db,ecommerce_order_db,ecommerce_inventory_db,ecommerce_notification_db}
     ports:
       - "${POSTGRES_PORT:-5432}:5432"
     volumes:
@@ -235,5 +235,32 @@ services:
       - order-service
       - inventory-service
       - valkey
+    networks:
+      - platform-net
+
+  # =========================================================================
+  # 7. NOTIFICATION SERVICE (Kafka consumer + in-app inbox)
+  # =========================================================================
+  notification-service:
+    build:
+      context: .
+      dockerfile: ./apps/notification-service/Dockerfile
+    container_name: shop-notification-service
+    ports:
+      - "${NOTIFICATION_SERVICE_PORT:-50055}:50055"
+    volumes:
+      - ./infra/certs:/certs:ro
+    environment:
+      PORT: 50055
+      DATABASE_URL: ${NOTIFICATION_DATABASE_URL:-postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/ecommerce_notification_db?sslmode=disable}
+      KAFKA_BROKERS: ${KAFKA_BROKER_INTERNAL:-kafka:9092}
+      TLS_CERT_PATH: /certs/notification-service.crt
+      TLS_KEY_PATH: /certs/notification-service.key
+      TLS_CA_PATH: /certs/ca.crt
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
     networks:
       - platform-net
