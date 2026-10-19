@@ -63,6 +63,25 @@ export class CatalogController {
     }
   }
 
+  @GrpcMethod('CatalogService', 'ListProductsByShop')
+  async listProductsByShop(data: {
+    shop_id: string;
+    page?: number;
+    limit?: number;
+  }) {
+    try {
+      const products = await this.catalogService.listProductsByShop(
+        data.shop_id,
+        data.page ?? 1,
+        data.limit ?? 50,
+      );
+
+      return { products };
+    } catch (error) {
+      return this.mapGrpcError(error, 'ListProductsByShop');
+    }
+  }
+
   @GrpcMethod('CatalogService', 'GetProduct')
   async getProduct(data: { product_id: string }) {
     try {

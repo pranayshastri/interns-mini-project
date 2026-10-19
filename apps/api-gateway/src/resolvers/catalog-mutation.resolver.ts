@@ -1,4 +1,4 @@
-import { Args, Context, Mutation, Resolver } from '@nestjs/graphql';
+import { Args, Context, Mutation, Query, Resolver } from '@nestjs/graphql';
 import { GraphQLError } from 'graphql';
 import { AuthClient } from '../grpc/auth-client.service';
 import { CommerceClient } from '../grpc/commerce-client.service';
@@ -27,6 +27,55 @@ export class CatalogMutationResolver {
     private readonly grpc: CommerceClient,
     private readonly auth: AuthClient,
   ) {}
+
+  @Query('myProducts')
+  async myProducts(
+    @Args('page') page: number = 1,
+    @Args('limit') limit: number = 50,
+    @Context() context: any,
+  ) {
+    const token = readSessionToken(context.req);
+    const user = await this.auth.call('getProfile', { token });
+
+    if (user.role !== 'SHOPKEEPER' || user.status !== 'ACTIVE') {
+      throw new GraphQLError('Only active sellers can view their products.', {
+        extensions: { code: 'FORBIDDEN' },
+      });
+    }
+
+    const shopId =
+      typeof user.shop_id === 'string' ? user.shop_id.trim() : '';
+
+    if (!shopId) {
+      throw new GraphQLError('Your seller account has no shop assigned.', {
+        extensions: { code: 'FORBIDDEN' },
+      });
+    }
+
+    if (
+      !Number.isInteger(page) ||
+      page < 1 ||
+      !Number.isInteger(limit) ||
+      limit < 1 ||
+      limit > 100
+    ) {
+      throw badInput('Page must be positive and limit must be between 1 and 100.');
+    }
+
+    const result = await this.grpc.call('catalog', 'listProductsByShop', {
+      shop_id: shopId,
+      page,
+      limit,
+    });
+
+    return result.products.map((product: any) => ({
+      id: product.id,
+      shopId: product.shop_id,
+      name: product.name,
+      description: product.description,
+      priceCents: Number(product.price_cents),
+    }));
+  }
 
   @Mutation('createProduct')
   async createProduct(
