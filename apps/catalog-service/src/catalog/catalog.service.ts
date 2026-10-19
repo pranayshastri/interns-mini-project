@@ -1,19 +1,151 @@
-import { Injectable } from '@nestjs/common';
-import { RpcException } from '@nestjs/microservices';
+
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-const validUuid = (s: string) => /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(s);
-const view = (p: any) => ({ id: p.id, shop_id: p.shopId, name: p.name, description: p.description, price_cents: p.priceCents.toString() });
+import { ValkeyService } from '../cache/valkey.service';
+
+const MAX_PRICE_CENTS = 9223372036854775807n;
+
+const validUuid = (value: string) =>
+  /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(value);
+
 @Injectable()
 export class CatalogService {
-  constructor(private readonly prisma: PrismaService) {}
-  async listProducts({ page = 1, limit = 50 }: { page?: number; limit?: number }) {
-    if (!Number.isInteger(page) || page < 1 || !Number.isInteger(limit) || limit < 1 || limit > 100) throw new RpcException({ code: 3, message: 'Invalid pagination' });
-    return { products: (await this.prisma.product.findMany({ skip: (page - 1) * limit, take: limit, orderBy: { id: 'asc' } })).map(view) };
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly valkey: ValkeyService,
+  ) {}
+
+  async createProduct(data: {
+    shop_id: string;
+    name: string;
+    description: string;
+    price_cents: number | string;
+  }) {
+    if (
+      typeof data.shop_id !== 'string' ||
+      !data.shop_id.trim() ||
+      typeof data.name !== 'string' ||
+      !data.name.trim() ||
+      typeof data.description !== 'string' ||
+      !data.description.trim()
+    ) {
+      throw new BadRequestException(
+        'shop_id, name and description are required',
+      );
+    }
+
+    const rawPrice = String(data.price_cents);
+    if (!/^[0-9]+$/.test(rawPrice)) {
+      throw new BadRequestException(
+        'price_cents must be a non-negative integer',
+      );
+    }
+
+    let price: bigint;
+
+    try {
+      price = BigInt(rawPrice);
+    } catch {
+      throw new BadRequestException(
+        'price_cents must be a non-negative integer',
+      );
+    }
+
+    if (price < 0n || price > MAX_PRICE_CENTS) {
+      throw new BadRequestException(
+        'price_cents is outside the supported range',
+      );
+    }
+
+    const product = await this.prisma.product.create({
+      data: {
+        shopId: data.shop_id.trim(),
+        name: data.name.trim(),
+        description: data.description.trim(),
+        priceCents: price,
+      },
+    });
+
+    await this.valkey.invalidateProductsCache();
+
+    return {
+      id: product.id,
+      shop_id: product.shopId,
+      name: product.name,
+      description: product.description,
+      price_cents: product.priceCents.toString(),
+      available_stock: 0,
+    };
   }
-  async getProduct(id: string) {
-    if (!validUuid(id)) throw new RpcException({ code: 3, message: 'A valid product UUID is required' });
-    const product = await this.prisma.product.findUnique({ where: { id } });
-    if (!product) throw new RpcException({ code: 5, message: 'Product not found' });
-    return view(product);
+
+  async listProducts(page = 1, limit = 50) {
+    if (
+      !Number.isInteger(page) ||
+      !Number.isInteger(limit) ||
+      page < 1 ||
+      limit < 1 ||
+      limit > 100
+    ) {
+      throw new BadRequestException(
+        'page must be positive and limit must be between 1 and 100',
+      );
+    }
+
+    const cached = await this.valkey.getCachedProducts(page, limit);
+
+    if (cached) {
+      return cached;
+    }
+
+    const products = await this.prisma.product.findMany({
+      skip: (page - 1) * limit,
+      take: limit,
+      orderBy: { createdAt: 'desc' },
+    });
+
+    const result = products.map((product) => ({
+      id: product.id,
+      shop_id: product.shopId,
+      name: product.name,
+      description: product.description,
+      price_cents: product.priceCents.toString(),
+      created_at: product.createdAt,
+    }));
+
+    await this.valkey.setCachedProducts(page, limit, result, 60);
+
+    return result;
+  }
+
+  async getProduct(productId: string) {
+    if (
+      typeof productId !== 'string' ||
+      !validUuid(productId.trim())
+    ) {
+      throw new BadRequestException(
+        'A valid product UUID is required',
+      );
+    }
+
+    const product = await this.prisma.product.findUnique({
+      where: { id: productId.trim() },
+    });
+
+    if (!product) {
+      throw new NotFoundException('Product not found');
+    }
+
+    return {
+      id: product.id,
+      shop_id: product.shopId,
+      name: product.name,
+      description: product.description,
+      price_cents: product.priceCents.toString(),
+      available_stock: 0,
+    };
   }
 }
