@@ -142,7 +142,7 @@ const config = {
       "value": "prisma-client-js"
     },
     "output": {
-      "value": "/home/ankit/pro/dezinetproject/interns-mini-project/apps/notification-service/generated/prisma",
+      "value": "C:\\Users\\ayush\\Documents\\interns-mini-project\\apps\\notification-service\\generated\\prisma",
       "fromEnvVar": null
     },
     "config": {
@@ -151,12 +151,12 @@ const config = {
     "binaryTargets": [
       {
         "fromEnvVar": null,
-        "value": "debian-openssl-3.0.x",
+        "value": "windows",
         "native": true
       }
     ],
     "previewFeatures": [],
-    "sourceFilePath": "/home/ankit/pro/dezinetproject/interns-mini-project/apps/notification-service/prisma/schema.prisma",
+    "sourceFilePath": "C:\\Users\\ayush\\Documents\\interns-mini-project\\apps\\notification-service\\prisma\\schema.prisma",
     "isCustomOutput": true
   },
   "relativeEnvPaths": {

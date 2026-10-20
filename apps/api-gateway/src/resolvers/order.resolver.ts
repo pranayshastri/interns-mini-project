@@ -1,3 +1,4 @@
+
 import { Args, Context, Mutation, Query, Resolver } from '@nestjs/graphql';
 import { GraphQLError } from 'graphql';
 import { AuthClient } from '../grpc/auth-client.service';
@@ -6,12 +7,23 @@ import { CommerceClient } from '../grpc/commerce-client.service';
 import { badInput, uuid } from './commerce.types';
 
 export const orderTypeDefs = `
+  type OrderLineItem {
+    productId: ID!
+    shopId: ID!
+    quantity: Int!
+    unitPriceCents: Int!
+  }
+
   type Order {
     id: ID!
     customerId: ID!
     status: String!
     totalAmountCents: Int!
     createdAt: String!
+    shippingAddress: String!
+    paymentMethod: String!
+    paymentStatus: String!
+    items: [OrderLineItem!]!
   }
 
   input OrderItemInput {
@@ -23,6 +35,7 @@ export const orderTypeDefs = `
 
   extend type Query {
     order(id: ID!): Order
+    orders: [Order!]!
   }
 
   extend type Mutation {
@@ -75,6 +88,15 @@ function toGraphQLOrder(order: any) {
     status: order.status,
     totalAmountCents: total,
     createdAt: createdAt.toISOString(),
+    shippingAddress: order.shipping_address || '',
+    paymentMethod: order.payment_method || 'COD',
+    paymentStatus: order.payment_status || 'PENDING',
+    items: (order.items || []).map((item: any) => ({
+      productId: item.product_id,
+      shopId: item.shop_id,
+      quantity: Number(item.quantity),
+      unitPriceCents: Number(item.unit_price_cents),
+    })),
   };
 }
 
@@ -116,11 +138,17 @@ export class OrderResolver {
     }
 
     const seen = new Set<string>();
+
     for (const item of items) {
       uuid(item.productId);
       uuid(item.shopId);
-      if (seen.has(item.productId)) throw badInput('Each product may appear only once.');
+
+      if (seen.has(item.productId)) {
+        throw badInput('Each product may appear only once.');
+      }
+
       seen.add(item.productId);
+
       if (
         !Number.isInteger(item.quantity) ||
         item.quantity <= 0 ||
@@ -133,27 +161,58 @@ export class OrderResolver {
       }
     }
 
-    // The browser's cart is a proposal. Re-read product and stock from their
-    // owners before creating the order; neither shop nor price is trusted.
-    const resolved = await Promise.all(items.map(async (item) => {
-      const [product, inventory] = await Promise.all([
-        this.commerce.call('catalog', 'getProduct', { product_id: item.productId }),
-        this.commerce.call('inventory', 'getStock', { product_id: item.productId }),
-      ]);
-      if (product.shop_id !== item.shopId || BigInt(product.price_cents) !== BigInt(item.unitPriceCents)) {
-        throw badInput('Product price or shop changed. Refresh your cart.');
-      }
-      if (inventory.available_stock < item.quantity) {
-        throw badInput('Product stock changed. Refresh your cart.');
-      }
-      return { product_id: product.id, shop_id: product.shop_id, quantity: item.quantity, unit_price_cents: product.price_cents };
-    }));
-    const total = resolved.reduce((sum, item) => sum + BigInt(item.unit_price_cents) * BigInt(item.quantity), 0n);
-    if (total > 2147483647n) throw badInput('Order total exceeds the supported checkout range.');
+    // Re-validate product ownership, price, and stock with their services.
+    const resolved = await Promise.all(
+      items.map(async (item) => {
+        const [product, inventory] = await Promise.all([
+          this.commerce.call('catalog', 'getProduct', {
+            product_id: item.productId,
+          }),
+          this.commerce.call('inventory', 'getStock', {
+            product_id: item.productId,
+          }),
+        ]);
+
+        if (
+          product.shop_id !== item.shopId ||
+          BigInt(product.price_cents) !== BigInt(item.unitPriceCents)
+        ) {
+          throw badInput(
+            'Product price or shop changed. Refresh your cart.',
+          );
+        }
+
+        if (inventory.available_stock < item.quantity) {
+          throw badInput('Product stock changed. Refresh your cart.');
+        }
+
+        return {
+          product_id: product.id,
+          shop_id: product.shop_id,
+          quantity: item.quantity,
+          unit_price_cents: product.price_cents,
+        };
+      }),
+    );
+
+    const total = resolved.reduce(
+      (sum, item) =>
+        sum +
+        BigInt(item.unit_price_cents) * BigInt(item.quantity),
+      0n,
+    );
+
+    if (total > 2147483647n) {
+      throw badInput(
+        'Order total exceeds the supported checkout range.',
+      );
+    }
+
     const result = await this.orderClient.call('createOrder', {
       customer_id: user.id,
       items: resolved,
       shipping_address: shippingAddress.trim(),
+      payment_method: 'COD',
     });
 
     return toGraphQLOrder(result);
@@ -179,5 +238,28 @@ export class OrderResolver {
     }
 
     return toGraphQLOrder(result);
+  }
+
+  @Query('orders')
+  async listOrders(@Context() context: any) {
+    const token = readSessionToken(context.req);
+    const user = await this.authClient.call('getProfile', { token });
+
+    if (user.role !== 'CUSTOMER' || user.status !== 'ACTIVE') {
+      throw new GraphQLError(
+        'Only active customers can view their orders.',
+        {
+          extensions: { code: 'FORBIDDEN' },
+        },
+      );
+    }
+
+    const result = await this.orderClient.call('listOrders', {
+      customer_id: user.id,
+    });
+
+    return (result.orders || []).map((order: any) =>
+      toGraphQLOrder(order),
+    );
   }
 }

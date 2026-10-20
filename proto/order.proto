@@ -5,6 +5,7 @@ option go_package = "github.com/platform/gen/orderv1";
 service OrderService {
   rpc CreateOrder (CreateOrderRequest) returns (OrderResponse);
   rpc GetOrder (GetOrderRequest) returns (OrderResponse);
+  rpc ListOrders (ListOrdersRequest) returns (ListOrdersResponse);
 }
 
 message OrderItem {
@@ -18,16 +19,30 @@ message CreateOrderRequest {
   string customer_id = 1;
   repeated OrderItem items = 2;
   string shipping_address = 3;
+  string payment_method = 4;
+  string payment_status = 5;
 }
 
 message OrderResponse {
   string order_id = 1;
   string customer_id = 2;
-  string status = 3; // PENDING, CONFIRMED, CANCELLED
+  string status = 3;
   int64 total_amount_cents = 4;
   int64 created_at = 5;
+  repeated OrderItem items = 6;
+  string shipping_address = 7;
+  string payment_method = 8;
+  string payment_status = 9;
 }
 
 message GetOrderRequest {
   string order_id = 1;
+}
+
+message ListOrdersRequest {
+  string customer_id = 1;
+}
+
+message ListOrdersResponse {
+  repeated OrderResponse orders = 1;
 }

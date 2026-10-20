@@ -226,6 +226,7 @@ services:
       CATALOG_SERVICE_ADDR: ${CATALOG_SERVICE_ADDR:-catalog-service:50052}
       ORDER_SERVICE_ADDR: ${ORDER_SERVICE_ADDR:-order-service:50053}
       INVENTORY_SERVICE_ADDR: ${INVENTORY_SERVICE_ADDR:-inventory-service:50054}
+      NOTIFICATION_SERVICE_ADDR: ${NOTIFICATION_SERVICE_ADDR:-notification-service:50055}
       TLS_CERT_PATH: /certs/api-gateway.crt
       TLS_KEY_PATH: /certs/api-gateway.key
       TLS_CA_PATH: /certs/ca.crt

@@ -25,7 +25,7 @@ function stop(code) {
 }
 process.on('SIGINT', () => stop(0)); process.on('SIGTERM', () => stop(0));
 async function command(cmd, args, env = process.env) {
-  const child = spawn(cmd, args, { cwd: root, env, stdio: 'inherit', detached: true });
+  const child = spawn(cmd, args, { cwd: root, env, stdio: 'inherit', detached: true, shell: process.platform === 'win32' && cmd === 'npm' });
   children.push(child);
   return new Promise((resolve, reject) => { child.on('error', reject); child.on('exit', code => code === 0 ? resolve() : reject(new Error(`${cmd} ${args[0]} failed (${code}).`))); });
 }
@@ -59,10 +59,10 @@ async function main() {
   if (new Set(Object.values(ports)).size !== Object.keys(ports).length) throw new Error('Local services must use distinct ports.');
   for (const port of Object.values(ports)) { if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('Invalid local port.'); await portFree(port); }
   const origin = `http://127.0.0.1:${ports.frontend}`;
-  console.log(`Starting PostgreSQL, Valkey${commerce ? ' and Kafka' : ''} (existing volumes are preserved)…`);
+  console.log(`Starting PostgreSQL, Valkey${commerce ? ' and Kafka' : ''} (existing volumes are preserved)â€¦`);
   await command('docker', ['compose', 'up', '-d', '--wait', 'postgres', 'valkey', ...(commerce ? ['kafka'] : [])]);
   await command('npm', ['run', commerce ? 'prisma:generate' : 'build', ...names.map(name => `--workspace=${name}-service`), ...(commerce ? [] : ['--workspace=api-gateway'])]);
-  console.log('Applying additive admin account schema (existing data preserved)…');
+  console.log('Applying additive admin account schema (existing data preserved)â€¦');
   await command('npm', ['run', 'schema:admin', '--workspace=auth-service'], { ...process.env, DATABASE_URL: databaseUrl });
   await command('npm', ['run', 'schema:profile', '--workspace=auth-service'], { ...process.env, DATABASE_URL: databaseUrl });
   const { PrismaClient } = require('../apps/auth-service/generated/prisma');
@@ -120,11 +120,11 @@ async function main() {
   await service('Frontend', path.join(root, 'apps/frontend'), [require.resolve('next/dist/bin/next'), 'dev', '--hostname', '127.0.0.1', '--port', String(ports.frontend)], { ...env, ROBONEST_AUTH_ENABLED: 'true', ROBONEST_VERIFIED_CAPABILITIES: commerce ? 'products,product,stock,order,createOrder,notifications' : '', API_GATEWAY_URL: `http://127.0.0.1:${ports.gateway}`, NEXT_DIST_DIR: `.next-auth-local-${ports.frontend}` }, 'Ready');
   const response = await fetch(`${origin}/graphql`, { method: 'POST', headers: { 'Content-Type':'application/json', Origin:origin, Cookie:'shop_session=startup-readiness-invalid-token' }, body: JSON.stringify({ query:'query { me { id } }' }) });
   const body = await response.json();
-  if (body.errors?.[0]?.extensions?.code !== 'UNAUTHENTICATED') throw new Error('Frontend → gateway → mTLS Auth readiness check failed.');
+  if (body.errors?.[0]?.extensions?.code !== 'UNAUTHENTICATED') throw new Error('Frontend â†’ gateway â†’ mTLS Auth readiness check failed.');
   if (commerce) {
     const response = await fetch(`${origin}/graphql`, { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: origin }, body: JSON.stringify({ query: '{ products { id availableStock } }' }) });
     const result = await response.json();
-    if (result.errors || !Array.isArray(result.data?.products)) throw new Error('Frontend → gateway → Catalog/Inventory readiness check failed. Check service database schemas.');
+    if (result.errors || !Array.isArray(result.data?.products)) throw new Error('Frontend â†’ gateway â†’ Catalog/Inventory readiness check failed. Check service database schemas.');
   }
   console.log(`\n${commerce ? 'Development' : 'Authentication'} stack ready: ${origin}/login\nCustomer signup: ${origin}/signup\nAdmin workspace: ${origin}/admin\nCtrl+C stops these app processes. Infrastructure containers remain running.\n`);
 }

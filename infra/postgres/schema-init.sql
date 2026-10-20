@@ -97,14 +97,18 @@ ON CONFLICT (product_id) DO NOTHING;
 -- 4. ORDER SERVICE DATABASE (Transactional Outbox Pattern)
 \c ecommerce_order_db;
 
+
 CREATE TABLE IF NOT EXISTS orders (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     customer_id UUID NOT NULL,
     total_amount_cents BIGINT NOT NULL,
     status VARCHAR(32) DEFAULT 'PENDING' NOT NULL,
+    payment_method TEXT NOT NULL DEFAULT 'UNKNOWN',
+    payment_status TEXT NOT NULL DEFAULT 'NOT_TRACKED',
     shipping_address TEXT NOT NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
+
 
 CREATE TABLE IF NOT EXISTS order_items (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

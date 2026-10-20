@@ -1,3 +1,4 @@
+
 import { Injectable } from '@nestjs/common';
 import { RpcException } from '@nestjs/microservices';
 import { Prisma } from '../../generated/prisma';
@@ -14,10 +15,13 @@ interface CreateOrderInput {
   customer_id: string;
   items: OrderItemInput[];
   shipping_address: string;
+  payment_method?: string;
 }
 
 function isValidUuid(value: string): boolean {
-  return /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(value);
+  return /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(
+    value,
+  );
 }
 
 @Injectable()
@@ -25,7 +29,15 @@ export class OrderService {
   constructor(private readonly prisma: PrismaService) {}
 
   async createOrder(input: CreateOrderInput) {
-    const { customer_id, items, shipping_address } = input;
+    const {
+      customer_id,
+      items,
+      shipping_address,
+    } = input;
+
+    const paymentMethod = (input.payment_method || 'COD')
+      .trim()
+      .toUpperCase();
 
     if (
       !isValidUuid(customer_id) ||
@@ -39,6 +51,15 @@ export class OrderService {
           'Customer, shipping address, and at least one item are required',
       });
     }
+
+    if (paymentMethod !== 'COD') {
+      throw new RpcException({
+        code: 3,
+        message: 'This payment method is not currently supported',
+      });
+    }
+
+    const paymentStatus = 'PENDING';
 
     const normalizedItems = items.map((item) => {
       const quantity = Number(item.quantity);
@@ -86,7 +107,9 @@ export class OrderService {
           customerId: customer_id,
           totalAmountCents,
           status: 'PENDING',
-          shippingAddress: shipping_address,
+          paymentMethod,
+          paymentStatus,
+          shippingAddress: shipping_address.trim(),
           items: {
             create: normalizedItems,
           },
@@ -111,6 +134,8 @@ export class OrderService {
               unitPriceCents: item.unitPriceCents.toString(),
             })),
             totalAmountCents: totalAmountCents.toString(),
+            paymentMethod,
+            paymentStatus,
           } as Prisma.InputJsonValue,
         },
       });
@@ -140,5 +165,20 @@ export class OrderService {
     }
 
     return order;
+  }
+
+  async listOrders(customerId: string) {
+    if (!isValidUuid(customerId)) {
+      throw new RpcException({
+        code: 3,
+        message: 'A valid customer UUID is required',
+      });
+    }
+
+    return this.prisma.order.findMany({
+      where: { customerId },
+      orderBy: { createdAt: 'desc' },
+      include: { items: true },
+    });
   }
 }

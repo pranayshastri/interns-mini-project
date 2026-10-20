@@ -3,7 +3,17 @@ export type User = { id: string; fullName: string; phone?: string; email: string
 export type Product = { id: string; shopId: string; name: string; description: string; priceCents: number; availableStock: number; image?: string; category?: string; pack?: string; seller?: string };
 export type CartItem = { productId: string; quantity: number };
 export type OrderItem = CartItem & { shopId: string; unitPriceCents: number; name?: string };
-export type Order = { id: string; customerId: string; status: string; totalAmountCents: number; createdAt: string; items?: OrderItem[]; shippingAddress?: string };
+export type Order = {
+  id: string;
+  customerId: string;
+  status: string;
+  totalAmountCents: number;
+  createdAt: string;
+  items?: OrderItem[];
+  shippingAddress?: string;
+  paymentMethod?: string;
+  paymentStatus?: string;
+};
 export type PaymentState = 'idle' | 'preparing' | 'provider-loading' | 'awaiting' | 'verifying' | 'captured' | 'failed' | 'dismissed' | 'delayed';
 export type Payment = { orderId: string; state: PaymentState; reference?: string };
 export type Quote = { items: OrderItem[]; subtotal: number; discount: number; delivery: number; tax: number; total: number; currency: 'INR'; expiresAt: string };

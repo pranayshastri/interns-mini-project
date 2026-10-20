@@ -47,6 +47,8 @@ model Order {
   customerId       String      @map("customer_id")
   totalAmountCents BigInt      @map("total_amount_cents")
   status           String      @default("PENDING")
+  paymentMethod    String      @default("UNKNOWN") @map("payment_method")
+  paymentStatus    String      @default("NOT_TRACKED") @map("payment_status")
   shippingAddress  String      @map("shipping_address")
   createdAt        DateTime    @default(now()) @map("created_at")
   items            OrderItem[]

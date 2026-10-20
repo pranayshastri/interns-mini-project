@@ -35,8 +35,25 @@ test('Next.js -> GraphQL -> real mTLS service controllers and PostgreSQL', { tim
   const schema = `commerce_test_${randomUUID().replaceAll('-', '')}`;
   const url = new URL(base); url.searchParams.set('schema', schema);
   const temp = mkdtempSync(resolve(tmpdir(), 'commerce-mtls-'));
-  const certResult = spawnSync('bash', [resolve(root, 'scripts/generate-certs.sh')], { cwd: temp, encoding: 'utf8' });
-  assert.equal(certResult.status, 0, 'Temporary certificates generated');
+  const bashExecutable = process.platform === 'win32'
+  ? 'C:\\Program Files\\Git\\bin\\bash.exe'
+  : 'bash';
+
+const certResult = spawnSync(
+  bashExecutable,
+  [resolve(root, 'scripts/generate-certs.sh')],
+{
+  cwd: temp,
+  encoding: 'utf8',
+  env: { ...process.env, MSYS_NO_PATHCONV: '1' }
+}
+);
+
+assert.equal(
+  certResult.status,
+  0,
+  `Temporary certificates generated. stdout:\n${certResult.stdout}\nstderr:\n${certResult.stderr}`
+);
   const certDir = resolve(temp, 'infra/certs');
   const pem = name => readFileSync(resolve(certDir, name));
   const originalEnv = { ...process.env };
@@ -84,7 +101,18 @@ test('Next.js -> GraphQL -> real mTLS service controllers and PostgreSQL', { tim
     const Service = require(`../../${svc}-service/dist/${svc}/${svc}.service`)[`${title}Service`];
     const Prisma = require(`../../${svc}-service/dist/prisma/prisma.service`).PrismaService;
     const providers = [Service, { provide: Prisma, useValue: dbs[index] }];
-    if (svc === 'auth') providers.push(require('../../auth-service/dist/session/valkey.service').ValkeyService);
+
+if (svc === 'auth') {
+  providers.push(
+    require('../../auth-service/dist/session/valkey.service').ValkeyService,
+  );
+}
+
+if (svc === 'catalog') {
+  providers.push(
+    require('../../catalog-service/dist/cache/valkey.service').ValkeyService,
+  );
+}
     class TestModule {}
     Module({ controllers: [Controller], providers })(TestModule);
     const p = await port(); process.env[`${svc.toUpperCase()}_SERVICE_ADDR`] = `localhost:${p}`;
@@ -153,7 +181,7 @@ test('Next.js -> GraphQL -> real mTLS service controllers and PostgreSQL', { tim
     assert.equal(result.body.errors, undefined); assert.ok(result.cookie); return result.cookie;
   };
   const cookie = await login('customer@gmail.com');
-  const mutation = 'mutation($items:[OrderItemInput!]!){createOrder(items:$items,shippingAddress:"Test delivery address"){id customerId totalAmountCents status createdAt}}';
+  const mutation = 'mutation($items:[OrderItemInput!]!){createOrder(items:$items,shippingAddress:"Test delivery address"){id customerId totalAmountCents status createdAt paymentMethod paymentStatus}}';
   const item = { productId: seeds.productId, shopId: seeds.shopId, quantity: 2, unitPriceCents: 8900 };
   await t.test('Next proxy serves real catalog with fresh inventory stock', async () => {
     const result = await query('{products{id shopId priceCents availableStock}}');
@@ -179,9 +207,9 @@ test('Next.js -> GraphQL -> real mTLS service controllers and PostgreSQL', { tim
   });
   await t.test('creates persisted order and outbox, then enforces lookup ownership', async () => {
     const result = (await query(mutation, { items: [item] }, cookie)).body; assert.equal(result.errors, undefined);
-    const order = result.data.createOrder; assert.equal(order.customerId, seeds.customerId); assert.equal(order.totalAmountCents, 17800); assert.equal(order.status, 'PENDING');
+    const order = result.data.createOrder; assert.equal(order.customerId, seeds.customerId); assert.equal(order.totalAmountCents, 17800); assert.equal(order.status, 'PENDING');assert.equal(order.paymentMethod, 'COD');assert.equal(order.paymentStatus, 'PENDING');
     assert.equal(await orderDb.outboxEvent.count({ where: { aggregateId: order.id } }), 1);
-    const saved = await orderDb.order.findUnique({ where: { id: order.id }, include: { items: true } }); assert.equal(saved.items[0].productId, seeds.productId); assert.equal(saved.items[0].shopId, seeds.shopId);
+    const saved = await orderDb.order.findUnique({ where: { id: order.id }, include: { items: true } }); assert.equal(saved.items[0].productId, seeds.productId); assert.equal(saved.items[0].shopId, seeds.shopId);assert.equal(saved.paymentMethod, 'COD');assert.equal(saved.paymentStatus, 'PENDING');
     const lookup = 'query($id:ID!){order(id:$id){id totalAmountCents}}';
     assert.equal((await query(lookup, { id: order.id }, cookie)).body.data.order.id, order.id);
     const otherCookie = await login(other.email);
@@ -189,7 +217,9 @@ test('Next.js -> GraphQL -> real mTLS service controllers and PostgreSQL', { tim
   });
   await t.test('browser shops real catalog and places a persisted order through Next.js and mTLS', async () => {
     const { chromium } = require('@playwright/test');
-    const browser = await chromium.launch({ executablePath: process.env.CHROME_PATH || '/usr/bin/google-chrome', headless: true });
+    const browser = await chromium.launch({
+  headless: true
+});
     try {
       const page = await browser.newPage();
       await page.goto(`${origin}/login`);

@@ -69,3 +69,8 @@ apps/frontend/AGENTS.md
 /apps/order-service/generated/
 /apps/inventory-service/generated/
 TASKS.md
+
+# Local temporary files
+/apps/notification-service/generated/prisma/query_engine-windows.dll.node
+/check-graphql.mjs
+/scripts/dev-auth.cjs.bak

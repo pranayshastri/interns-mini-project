@@ -9,9 +9,18 @@ export class AuthController {
   private async safe<T>(operation: () => Promise<T>): Promise<T> {
     try { return await operation(); }
     catch (error) {
-      if (error instanceof RpcException) throw error;
-      throw new RpcException({ code: status.UNAVAILABLE, message: 'Account service is temporarily unavailable.' });
-    }
+  if (error instanceof RpcException) throw error;
+
+  console.error(
+    '[AuthController] Auth operation failed:',
+    error instanceof Error ? error.message : String(error),
+  );
+
+  throw new RpcException({
+    code: status.UNAVAILABLE,
+    message: 'Account service is temporarily unavailable.',
+  });
+}
   }
   @GrpcMethod('AuthService', 'Register') register(data: any) { return this.safe(() => this.auth.register(data)); }
   @GrpcMethod('AuthService', 'Authenticate') authenticate(data: any) { return this.safe(() => this.auth.authenticate(data)); }
