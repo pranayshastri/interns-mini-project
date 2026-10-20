@@ -68,4 +68,5 @@ apps/frontend/AGENTS.md
 /apps/catalog-service/generated/
 /apps/order-service/generated/
 /apps/inventory-service/generated/
+/apps/notification-service/generated/
 TASKS.md

@@ -5,21 +5,30 @@ CERT_DIR="./infra/certs"
 mkdir -p "$CERT_DIR"
 cd "$CERT_DIR"
 
-echo "=== 1. Generating Root Certificate Authority (CA) ==="
-openssl genrsa -out ca.key 4096
-openssl req -x509 -new -nodes -key ca.key -sha256 -days 3650 -out ca.crt \
-  -subj "/C=US/ST=Dev/L=Local/O=ShoppingPlatform/OU=Security/CN=Internal-Root-CA" \
-  -addext "basicConstraints=critical,CA:TRUE" \
-  -addext "keyUsage=critical,keyCertSign,cRLSign"
+if [ -f "ca.key" ] && [ -f "ca.crt" ]; then
+  echo "=== 1. Using Existing Root Certificate Authority (CA) ==="
+else
+  echo "=== 1. Generating Root Certificate Authority (CA) ==="
+  openssl genrsa -out ca.key 4096
+  openssl req -x509 -new -nodes -key ca.key -sha256 -days 3650 -out ca.crt \
+    -subj "/C=US/ST=Dev/L=Local/O=ShoppingPlatform/OU=Security/CN=Internal-Root-CA" \
+    -addext "basicConstraints=critical,CA:TRUE" \
+    -addext "keyUsage=critical,keyCertSign,cRLSign"
+fi
 
 generate_cert() {
   local NAME=$1
   local SAN=$2
 
+  if [ -f "${NAME}.crt" ] && [ -f "${NAME}.key" ]; then
+    echo "=== Certificate for $NAME already exists, skipping ==="
+    return
+  fi
+
   echo "=== Generating Certificate for: $NAME ==="
   openssl genrsa -out "${NAME}.key" 2048
 
-  cat > "${NAME}.cnf" <<EOF
+  cat > "${NAME}.cnf" << 'EOF_CNF'
 [req]
 default_bits = 2048
 prompt = no
@@ -30,11 +39,14 @@ distinguished_name = dn
 [dn]
 C = US
 O = ShoppingPlatform
-CN = ${NAME}
+CN = NAMESHOLDER
 
 [req_ext]
-subjectAltName = ${SAN}
-EOF
+subjectAltName = SANHOLDER
+EOF_CNF
+
+  sed -i "s/NAMESHOLDER/${NAME}/g" "${NAME}.cnf"
+  sed -i "s|SANHOLDER|${SAN}|g" "${NAME}.cnf"
 
   openssl req -new -key "${NAME}.key" -out "${NAME}.csr" -config "${NAME}.cnf"
   openssl x509 -req -in "${NAME}.csr" -CA ca.crt -CAkey ca.key \
@@ -52,8 +64,10 @@ generate_cert "notification-service" "DNS:notification-service,DNS:localhost,IP:
 generate_cert "api-gateway" "DNS:api-gateway,DNS:localhost,IP:127.0.0.1"
 
 # Generate an UNTRUSTED certificate to test failure cases!
-echo "=== Generating Untrusted Attacker Certificate (Self-Signed) ==="
-openssl req -x509 -newkey rsa:2048 -nodes -keyout untrusted.key -out untrusted.crt -days 30 \
-  -subj "/C=US/O=Hacker/CN=untrusted-client"
+if [ ! -f "untrusted.crt" ]; then
+  echo "=== Generating Untrusted Attacker Certificate (Self-Signed) ==="
+  openssl req -x509 -newkey rsa:2048 -nodes -keyout untrusted.key -out untrusted.crt -days 30 \
+    -subj "/C=US/O=Hacker/CN=untrusted-client"
+fi
 
 echo "=== Certificates ready in $CERT_DIR ==="

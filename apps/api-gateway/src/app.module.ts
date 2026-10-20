@@ -25,8 +25,7 @@ import { NotificationResolver, notificationTypeDefs } from './resolvers/notifica
     context: ({ req, res }) => ({ req, res }),
     formatError: error => ({ message: error.extensions?.code === 'INTERNAL_SERVER_ERROR' ? 'Something went wrong. Please try again.' : error.message, extensions: { code: error.extensions?.code } }),
   })],
-  providers: [AuthClient, AuthResolver, OrderClient, OrderResolver, CommerceClient, CatalogResolver, CatalogMutationResolver, InventoryResolver],
-  providers: [AuthClient, AuthResolver, OrderClient, OrderResolver, CommerceClient, CatalogResolver, InventoryResolver, NotificationClient, NotificationResolver],
+  providers: [AuthClient, AuthResolver, OrderClient, OrderResolver, CommerceClient, CatalogResolver, CatalogMutationResolver, InventoryResolver, NotificationClient, NotificationResolver],
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {
