@@ -156,6 +156,12 @@ Before running the services, generate the internal Root CA and service certifica
 .\scripts\generate-certs.ps1
 ```
 
+Both scripts are safe to re-run: an existing Root CA and existing service certificates are
+reused, so running them never rotates the CA and never invalidates certificates the rest of
+the team already trusts. To deliberately discard everything and re-issue from scratch, use
+`./scripts/generate-certs.sh --force` (or `.\scripts\generate-certs.ps1 -Force`) — note that
+every peer must then trust the new CA.
+
 ### 3. Start Core Infrastructure (Docker Compose)
 Start PostgreSQL 16, Valkey 8, Apache Kafka (KRaft mode), and Kafka UI:
 ```bash

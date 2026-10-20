@@ -1,22 +1,74 @@
+<#
+.SYNOPSIS
+Generates the internal Root CA and the per-service mTLS certificates used by the
+gRPC mesh.
+
+.DESCRIPTION
+The script is idempotent: an existing Root CA and existing service certificates
+are reused, so running it never invalidates a CA that the rest of the team
+already trusts. Use -Force to deliberately discard and re-issue everything.
+
+.EXAMPLE
+.\scripts\generate-certs.ps1
+.\scripts\generate-certs.ps1 -Force
+#>
+param(
+    [switch]$Force,
+    [switch]$Help
+)
+
 $ErrorActionPreference = "Stop"
 
-$CERT_DIR = Join-Path $PSScriptRoot "..\infra\certs"
-if (!(Test-Path $CERT_DIR)) {
-    New-Item -ItemType Directory -Path $CERT_DIR -Force | Out-Null
+if ($Help) {
+    Write-Host "Usage: generate-certs.ps1 [-Force] [-Help]"
+    Write-Host ""
+    Write-Host "  -Force  Discard the existing Root CA and service certificates and"
+    Write-Host "          re-issue them. Use this only when the CA itself must be"
+    Write-Host "          replaced, because every peer must then trust the new CA."
+    exit 0
 }
 
-Push-Location $CERT_DIR
+# Resolve the repository root from this script's own location so the script can
+# be invoked from any working directory.
+$RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+$CertDir = Join-Path $RepoRoot "infra\certs"
 
-Write-Host "=== 1. Generating Root Certificate Authority (CA) ==="
-& openssl genrsa -out ca.key 4096
-& openssl req -x509 -new -nodes -key ca.key -sha256 -days 3650 -out ca.crt `
-  -subj "/C=US/ST=Dev/L=Local/O=ShoppingPlatform/OU=Security/CN=Internal-Root-CA"
+if (!(Test-Path $CertDir)) {
+    New-Item -ItemType Directory -Path $CertDir -Force | Out-Null
+}
 
-function Generate-Cert($Name, $San) {
-    Write-Host "=== Generating Certificate for: $Name ==="
-    & openssl genrsa -out "$Name.key" 2048
+Push-Location $CertDir
 
-    $cnfContent = @"
+try {
+    if ($Force) {
+        Write-Host "=== 0. Forced regeneration: discarding existing certificates ==="
+        Get-ChildItem -Path $CertDir -File |
+            Where-Object { $_.Extension -in ".key", ".crt", ".srl" } |
+            Remove-Item -Force
+    }
+
+    if ((Test-Path "ca.key") -and (Test-Path "ca.crt")) {
+        Write-Host "=== 1. Using Existing Root Certificate Authority (CA) ==="
+    }
+    else {
+        Write-Host "=== 1. Generating Root Certificate Authority (CA) ==="
+        & openssl genrsa -out ca.key 4096
+        & openssl req -x509 -new -nodes -key ca.key -sha256 -days 3650 -out ca.crt `
+            -subj "/C=US/ST=Dev/L/Local/O=ShoppingPlatform/OU=Security/CN=Internal-Root-CA" `
+            -addext "basicConstraints=critical,CA:TRUE" `
+            -addext "keyUsage=critical,keyCertSign,cRLSign"
+    }
+
+    function Generate-Cert($Name, $San) {
+        if ((Test-Path "$Name.crt") -and (Test-Path "$Name.key")) {
+            Write-Host "=== Certificate for $Name already exists, skipping ==="
+            return
+        }
+
+        Write-Host "=== Generating Certificate for: $Name ==="
+        & openssl genrsa -out "$Name.key" 2048
+
+        $cnfContent = @"
 [req]
 default_bits = 2048
 prompt = no
@@ -32,24 +84,30 @@ CN = $Name
 [req_ext]
 subjectAltName = $San
 "@
-    Set-Content -Path "$Name.cnf" -Value $cnfContent
+        Set-Content -Path "$Name.cnf" -Value $cnfContent
 
-    & openssl req -new -key "$Name.key" -out "$Name.csr" -config "$Name.cnf"
-    & openssl x509 -req -in "$Name.csr" -CA ca.crt -CAkey ca.key `
-      -CAcreateserial -out "$Name.crt" -days 365 -sha256 `
-      -extfile "$Name.cnf" -extensions req_ext
-    Remove-Item "$Name.csr", "$Name.cnf" -Force
+        & openssl req -new -key "$Name.key" -out "$Name.csr" -config "$Name.cnf"
+        & openssl x509 -req -in "$Name.csr" -CA ca.crt -CAkey ca.key `
+            -CAcreateserial -out "$Name.crt" -days 365 -sha256 `
+            -extfile "$Name.cnf" -extensions req_ext
+        Remove-Item "$Name.csr", "$Name.cnf" -Force
+    }
+
+    Generate-Cert "auth-service" "DNS:auth-service,DNS:localhost,IP:127.0.0.1"
+    Generate-Cert "catalog-service" "DNS:catalog-service,DNS:localhost,IP:127.0.0.1"
+    Generate-Cert "order-service" "DNS:order-service,DNS:localhost,IP:127.0.0.1"
+    Generate-Cert "inventory-service" "DNS:inventory-service,DNS:localhost,IP:127.0.0.1"
+    Generate-Cert "notification-service" "DNS:notification-service,DNS:localhost,IP:127.0.0.1"
+    Generate-Cert "api-gateway" "DNS:api-gateway,DNS:localhost,IP:127.0.0.1"
+
+    if ((-not (Test-Path "untrusted.crt")) -or $Force) {
+        Write-Host "=== Generating Untrusted Attacker Certificate (Self-Signed) ==="
+        & openssl req -x509 -newkey rsa:2048 -nodes -keyout untrusted.key -out untrusted.crt -days 30 `
+            -subj "/C=US/O=Hacker/CN=untrusted-client"
+    }
+
+    Write-Host "=== Certificates ready in $CertDir ==="
 }
-
-Generate-Cert "auth-service" "DNS:auth-service,DNS:localhost,IP:127.0.0.1"
-Generate-Cert "catalog-service" "DNS:catalog-service,DNS:localhost,IP:127.0.0.1"
-Generate-Cert "order-service" "DNS:order-service,DNS:localhost,IP:127.0.0.1"
-Generate-Cert "inventory-service" "DNS:inventory-service,DNS:localhost,IP:127.0.0.1"
-Generate-Cert "api-gateway" "DNS:api-gateway,DNS:localhost,IP:127.0.0.1"
-
-Write-Host "=== Generating Untrusted Attacker Certificate (Self-Signed) ==="
-& openssl req -x509 -newkey rsa:2048 -nodes -keyout untrusted.key -out untrusted.crt -days 30 `
-  -subj "/C=US/O=Hacker/CN=untrusted-client"
-
-Pop-Location
-Write-Host "=== Certificates ready in $CERT_DIR ==="
+finally {
+    Pop-Location
+}
