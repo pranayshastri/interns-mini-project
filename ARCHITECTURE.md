@@ -410,66 +410,39 @@ sequenceDiagram
 ```
 
 ### 5.2 Certificate Generation Script (`scripts/generate-certs.sh`)
-This script creates an internal Root CA and issues certificates with Subject Alternative Names (SANs) for all services:
+
+The canonical script is `scripts/generate-certs.sh` (Windows: `scripts/generate-certs.ps1`).
+It creates an internal Root CA and issues certificates with Subject Alternative Names
+(SANs) for every service in the gRPC mesh:
+
+| Certificate            | SAN extension                                         | Used by                 |
+| ---------------------- | ----------------------------------------------------- | ----------------------- |
+| `ca.crt` / `ca.key`    | `DNS:localhost`, `IP:127.0.0.1`                        | every peer's trust anchor |
+| `auth-service`         | `DNS:auth-service,DNS:localhost,IP:127.0.0.1`          | auth-service            |
+| `catalog-service`      | `DNS:catalog-service,DNS:localhost,IP:127.0.0.1`       | catalog-service         |
+| `order-service`        | `DNS:order-service,DNS:localhost,IP:127.0.0.1`         | order-service           |
+| `inventory-service`    | `DNS:inventory-service,DNS:localhost,IP:127.0.0.1`     | inventory-service       |
+| `notification-service` | `DNS:notification-service,DNS:localhost,IP:127.0.0.1`  | notification-service    |
+| `api-gateway`          | `DNS:api-gateway,DNS:localhost,IP:127.0.0.1`           | api-gateway             |
+| `untrusted`            | self-signed, `CN=untrusted-client`                     | negative mTLS test case |
+
+Usage:
 
 ```bash
-#!/usr/bin/env bash
-set -e
-
-CERT_DIR="./infra/certs"
-mkdir -p "$CERT_DIR"
-cd "$CERT_DIR"
-
-echo "=== 1. Generating Root Certificate Authority (CA) ==="
-openssl genrsa -out ca.key 4096
-openssl req -x509 -new -nodes -key ca.key -sha256 -days 3650 -out ca.crt \
-  -subj "/C=US/ST=Dev/L=Local/O=ShoppingPlatform/OU=Security/CN=Internal-Root-CA"
-
-generate_cert() {
-  local NAME=$1
-  local SAN=$2
-
-  echo "=== Generating Certificate for: $NAME ==="
-  openssl genrsa -out "${NAME}.key" 2048
-
-  cat > "${NAME}.cnf" <<EOF
-[req]
-default_bits = 2048
-prompt = no
-default_md = sha256
-req_extensions = req_ext
-distinguished_name = dn
-
-[dn]
-C = US
-O = ShoppingPlatform
-CN = ${NAME}
-
-[req_ext]
-subjectAltName = ${SAN}
-EOF
-
-  openssl req -new -key "${NAME}.key" -out "${NAME}.csr" -config "${NAME}.cnf"
-  openssl x509 -req -in "${NAME}.csr" -CA ca.crt -CAkey ca.key \
-    -CAcreateserial -out "${NAME}.crt" -days 365 -sha256 \
-    -extfile "${NAME}.cnf" -extensions req_ext
-  rm -f "${NAME}.csr" "${NAME}.cnf"
-}
-
-# Generate Service Certificates (with DNS names matching Docker Compose service names)
-generate_cert "auth-service" "DNS:auth-service,DNS:localhost,IP:127.0.0.1"
-generate_cert "catalog-service" "DNS:catalog-service,DNS:localhost,IP:127.0.0.1"
-generate_cert "order-service" "DNS:order-service,DNS:localhost,IP:127.0.0.1"
-generate_cert "inventory-service" "DNS:inventory-service,DNS:localhost,IP:127.0.0.1"
-generate_cert "api-gateway" "DNS:api-gateway,DNS:localhost,IP:127.0.0.1"
-
-# Generate an UNTRUSTED certificate to test failure cases!
-echo "=== Generating Untrusted Attacker Certificate (Self-Signed) ==="
-openssl req -x509 -newkey rsa:2048 -nodes -keyout untrusted.key -out untrusted.crt -days 30 \
-  -subj "/C=US/O=Hacker/CN=untrusted-client"
-
-echo "=== Certificates ready in $CERT_DIR ==="
+./scripts/generate-certs.sh            # create only what is missing
+./scripts/generate-certs.sh --force    # discard everything and re-issue
 ```
+
+Behaviour worth knowing:
+
+- **The output directory is resolved from the script's own location**, so the script can be
+  invoked from any working directory and always writes to `<repo>/infra/certs`.
+- **The script is idempotent.** An existing Root CA and existing service certificates are
+  reused. Re-running it never rotates the CA, so it cannot invalidate certificates that the
+  rest of the team already trusts. Only `--force` re-issues the CA, and that is intentional
+  because every peer must then trust the new CA.
+- **A missing service certificate is re-issued individually** against the existing CA, so a
+  single deleted file can be repaired without touching the others.
 
 ### 5.3 Enforcing mTLS on gRPC Servers (Go Example)
 ```go
