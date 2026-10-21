@@ -47,16 +47,28 @@ try {
             Remove-Item -Force
     }
 
-    if ((Test-Path "ca.key") -and (Test-Path "ca.crt")) {
+    $caKeyExists = Test-Path "ca.key"
+    $caCrtExists = Test-Path "ca.crt"
+
+    if ($caKeyExists -and $caCrtExists) {
         Write-Host "=== 1. Using Existing Root Certificate Authority (CA) ==="
     }
-    else {
+    elseif (-not $caKeyExists -and -not $caCrtExists) {
         Write-Host "=== 1. Generating Root Certificate Authority (CA) ==="
         & openssl genrsa -out ca.key 4096
         & openssl req -x509 -new -nodes -key ca.key -sha256 -days 3650 -out ca.crt `
-            -subj "/C=US/ST=Dev/L/Local/O=ShoppingPlatform/OU=Security/CN=Internal-Root-CA" `
+            -subj "/C=US/ST=Dev/L=Local/O=ShoppingPlatform/OU=Security/CN=Internal-Root-CA" `
             -addext "basicConstraints=critical,CA:TRUE" `
             -addext "keyUsage=critical,keyCertSign,cRLSign"
+    }
+    else {
+        Write-Host "=== 1. ERROR: Half-existing CA detected ===" > $null
+        Write-Host "    One of ca.key/ca.crt is missing while the other exists." > $null
+        Write-Host "    This would generate a new CA that invalidates existing service certificates." > $null
+        Write-Host "    Please either:" > $null
+        Write-Host "    1. Restore the original CA files, or" > $null
+        Write-Host "    2. Run with -Force to regenerate everything." > $null
+        exit 1
     }
 
     function Generate-Cert($Name, $San) {

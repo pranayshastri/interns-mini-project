@@ -51,6 +51,14 @@ fi
 
 if [ -f "ca.key" ] && [ -f "ca.crt" ]; then
   echo "=== 1. Using Existing Root Certificate Authority (CA) ==="
+elif [ -f "ca.key" ] || [ -f "ca.crt" ]; then
+  echo "=== 1. ERROR: Half-existing CA detected ===" >&2
+  echo "    One of ca.key/ca.crt is missing while the other exists." >&2
+  echo "    This would generate a new CA that invalidates existing service certificates." >&2
+  echo "    Please either:" >&2
+  echo "    1. Restore the original CA files, or" >&2
+  echo "    2. Run with --force to regenerate everything." >&2
+  exit 1
 else
   echo "=== 1. Generating Root Certificate Authority (CA) ==="
   openssl genrsa -out ca.key 4096
