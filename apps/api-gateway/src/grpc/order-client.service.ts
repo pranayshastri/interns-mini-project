@@ -27,6 +27,7 @@ export class OrderClient implements OnModuleDestroy {
     const proto = loadPackageDefinition(
       loadSync(PROTO_PATHS.order, {
         keepCase: true,
+        longs: String,
         defaults: true,
       }),
     ) as any;
@@ -34,6 +35,10 @@ export class OrderClient implements OnModuleDestroy {
     this.client = new proto.shop.order.v1.OrderService(
       process.env.ORDER_SERVICE_ADDR || 'localhost:50053',
       tls,
+      {
+        'grpc.ssl_target_name_override': 'order-service',
+        'grpc.default_authority': 'order-service',
+      },
     );
   }
 

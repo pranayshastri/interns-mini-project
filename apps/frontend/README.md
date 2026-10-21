@@ -9,7 +9,7 @@ npm run dev:auth
 
 `API_GATEWAY_URL` defaults to `http://127.0.0.1:4000` and is server-only. Authentication is enabled by default; `ROBONEST_AUTH_ENABLED=false` explicitly disables it. The root launcher configures the gateway and frontend origin together. Restart/rebuild after configuration changes.
 
-`ROBONEST_VERIFIED_CAPABILITIES` defaults to empty. The gateway now supports `products,product,stock,order,createOrder` with mTLS-backed services; enable those capabilities when Auth, Catalog, Inventory, Order, and the gateway are running. Product creation is available to authenticated active sellers when the full commerce stack is running. Product editing, payment, notifications, and invoices remain unavailable. The browser uses same-origin `/graphql` and does not access internal services directly.
+The frontend development script enables the verified live capabilities `products,product,stock,orders,order,createOrder,createProduct,myProducts,notifications,invoices`; run it only while Auth, Catalog, Inventory, Order, Notification, and the gateway are running. Product creation is available to authenticated active sellers when the full commerce stack is running. Product editing and payment remain unavailable. The browser uses same-origin `/graphql` and does not access internal services directly. Other environments can leave `ROBONEST_VERIFIED_CAPABILITIES` empty to fail closed.
 
 JWT is carried in the gateway's HttpOnly session cookie. Identity comes from `me`. The gateway talks to internal services using gRPC with mTLS; no keys, certificates, database credentials or internal service calls belong in browser code.
 

@@ -195,6 +195,7 @@ services:
       PORT: 50054
       DATABASE_URL: ${INVENTORY_DATABASE_URL:-postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/ecommerce_inventory_db?sslmode=disable}
       KAFKA_BROKERS: ${KAFKA_BROKER_INTERNAL:-kafka:9092}
+      ORDER_SERVICE_ADDR: ${ORDER_SERVICE_ADDR:-order-service:50053}
       TLS_CERT_PATH: /certs/inventory-service.crt
       TLS_KEY_PATH: /certs/inventory-service.key
       TLS_CA_PATH: /certs/ca.crt
@@ -203,6 +204,8 @@ services:
         condition: service_healthy
       kafka:
         condition: service_healthy
+      order-service:
+        condition: service_started
     networks:
       - platform-net
 
@@ -226,6 +229,7 @@ services:
       CATALOG_SERVICE_ADDR: ${CATALOG_SERVICE_ADDR:-catalog-service:50052}
       ORDER_SERVICE_ADDR: ${ORDER_SERVICE_ADDR:-order-service:50053}
       INVENTORY_SERVICE_ADDR: ${INVENTORY_SERVICE_ADDR:-inventory-service:50054}
+      NOTIFICATION_SERVICE_ADDR: ${NOTIFICATION_SERVICE_ADDR:-notification-service:50055}
       TLS_CERT_PATH: /certs/api-gateway.crt
       TLS_KEY_PATH: /certs/api-gateway.key
       TLS_CA_PATH: /certs/ca.crt
@@ -234,6 +238,7 @@ services:
       - catalog-service
       - order-service
       - inventory-service
+      - notification-service
       - valkey
     networks:
       - platform-net

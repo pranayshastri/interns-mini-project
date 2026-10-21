@@ -7,7 +7,7 @@ export class InventoryController {
   constructor(private readonly inventoryService: InventoryService) {}
 
   @GrpcMethod('InventoryService', 'GetStock')
-  async getStock(request: { product_id: string }): Promise<{
+async getStock(request: { product_id: string }): Promise<{
     product_id: string;
     available_stock: number;
   }> {
@@ -18,21 +18,23 @@ export class InventoryController {
     };
   }
 
-  @GrpcMethod('InventoryService', 'UpdateStock')
-  async updateStock(request: {
+  @GrpcMethod('InventoryService', 'ReserveStock')
+async reserveStock(request: {
     product_id: string;
-    delta: number;
+    quantity: number;
   }): Promise<{
-    product_id: string;
+    success: boolean;
     available_stock: number;
+    insufficient: boolean;
   }> {
-    const result = await this.inventoryService.updateStock(
+    const result = await this.inventoryService.reserveStock(
       request.product_id,
-      request.delta,
+      request.quantity,
     );
     return {
-      product_id: result.productId,
+      success: result.success,
       available_stock: result.availableStock,
+      insufficient: result.insufficient,
     };
   }
 }
