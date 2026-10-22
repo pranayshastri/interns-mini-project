@@ -5,6 +5,10 @@ option go_package = "github.com/platform/gen/orderv1";
 service OrderService {
   rpc CreateOrder (CreateOrderRequest) returns (OrderResponse);
   rpc GetOrder (GetOrderRequest) returns (OrderResponse);
+  rpc ListOrders (ListOrdersRequest) returns (ListOrdersResponse);
+  rpc GetInvoice (GetInvoiceRequest) returns (InvoiceResponse);
+  rpc ListInvoices (ListInvoicesRequest) returns (ListInvoicesResponse);
+  rpc ConfirmOrder (ConfirmOrderRequest) returns (ConfirmOrderResponse);
 }
 
 message OrderItem {
@@ -26,8 +30,56 @@ message OrderResponse {
   string status = 3; // PENDING, CONFIRMED, CANCELLED
   int64 total_amount_cents = 4;
   int64 created_at = 5;
+  repeated OrderItem items = 6;
+  string shipping_address = 7;
 }
 
 message GetOrderRequest {
   string order_id = 1;
+}
+
+message ListOrdersRequest {
+  string customer_id = 1;
+  string shop_id = 2;
+}
+
+message ListOrdersResponse {
+  repeated OrderResponse orders = 1;
+}
+
+message GetInvoiceRequest {
+  string invoice_id = 1;
+}
+
+message ListInvoicesRequest {
+  string buyer_id = 1;
+}
+
+message InvoiceResponse {
+  string invoice_id = 1;
+  string order_id = 2;
+  string status = 3;
+  int64 total_cents = 4;
+  string buyer_id = 5;
+  string seller_id = 6;
+  int64 created_at = 7;
+  int64 paid_at = 8;
+  string pdf_url = 9;
+  repeated OrderItem items = 10;
+  string shipping_address = 11;
+}
+
+message ListInvoicesResponse {
+  repeated InvoiceResponse invoices = 1;
+}
+
+message ConfirmOrderRequest {
+  string order_id = 1;
+  bool success = 2;
+  repeated string insufficient_product_ids = 3;
+}
+
+message ConfirmOrderResponse {
+  string order_id = 1;
+  string status = 3;
 }

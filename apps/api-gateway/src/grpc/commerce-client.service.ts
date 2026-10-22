@@ -13,7 +13,10 @@ export class CommerceClient implements OnModuleDestroy {
     const tls = getGrpcCredentials();
     const make = (name: Service, service: string, port: number) => {
       const proto = loadPackageDefinition(loadSync(PROTO_PATHS[name], { keepCase: true, longs: String, defaults: true })) as any;
-      return new proto.shop[name].v1[service](process.env[`${name.toUpperCase()}_SERVICE_ADDR`] || `${name}-service:${port}`, tls);
+      return new proto.shop[name].v1[service](process.env[`${name.toUpperCase()}_SERVICE_ADDR`] || `${name}-service:${port}`, tls, {
+        'grpc.ssl_target_name_override': `${name}-service`,
+        'grpc.default_authority': `${name}-service`,
+      });
     };
     this.clients = { catalog: make('catalog', 'CatalogService', 50052), inventory: make('inventory', 'InventoryService', 50054) };
   }

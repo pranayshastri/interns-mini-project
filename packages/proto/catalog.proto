@@ -24,6 +24,7 @@ message ProductResponse {
   string description = 4;
   int64 price_cents = 5;
   int32 available_stock = 6;
+  string image_url = 7;
 }
 
 message ListProductsRequest {

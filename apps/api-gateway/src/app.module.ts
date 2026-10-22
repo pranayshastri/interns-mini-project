@@ -13,11 +13,12 @@ import { InventoryResolver } from './resolvers/inventory.resolver';
 import { commerceTypeDefs } from './resolvers/commerce.types';
 import { NotificationClient } from './grpc/notification-client.service';
 import { NotificationResolver, notificationTypeDefs } from './resolvers/notification.resolver';
+import { InvoiceResolver, invoiceTypeDefs } from './resolvers/invoice.resolver';
 
 @Module({
   imports: [GraphQLModule.forRoot<ApolloDriverConfig>({
     driver: ApolloDriver,
-    typeDefs: [authTypeDefs, orderTypeDefs, commerceTypeDefs, notificationTypeDefs],
+    typeDefs: [authTypeDefs, orderTypeDefs, commerceTypeDefs, notificationTypeDefs, invoiceTypeDefs],
     playground: false,
     introspection: process.env.NODE_ENV !== 'production',
     csrfPrevention: true,
@@ -25,7 +26,7 @@ import { NotificationResolver, notificationTypeDefs } from './resolvers/notifica
     context: ({ req, res }) => ({ req, res }),
     formatError: error => ({ message: error.extensions?.code === 'INTERNAL_SERVER_ERROR' ? 'Something went wrong. Please try again.' : error.message, extensions: { code: error.extensions?.code } }),
   })],
-  providers: [AuthClient, AuthResolver, OrderClient, OrderResolver, CommerceClient, CatalogResolver, CatalogMutationResolver, InventoryResolver, NotificationClient, NotificationResolver],
+  providers: [AuthClient, AuthResolver, OrderClient, OrderResolver, CommerceClient, CatalogResolver, CatalogMutationResolver, InventoryResolver, NotificationClient, NotificationResolver, InvoiceResolver],
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {

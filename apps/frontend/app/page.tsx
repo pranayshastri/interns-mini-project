@@ -1,2 +1,5 @@
-import { Catalog } from '../features/catalog/catalog';
-export default function Page() { return <Catalog home/>; }
+import { redirect } from "next/navigation";
+
+export default function Page() {
+  redirect("/login");
+}

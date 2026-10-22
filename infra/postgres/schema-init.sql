@@ -90,6 +90,22 @@ CREATE TABLE IF NOT EXISTS inbox_events (
     processed_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS order_confirmation_outbox (
+    order_id UUID PRIMARY KEY,
+    event_id UUID NOT NULL,
+    success BOOLEAN NOT NULL,
+    insufficient_product_ids TEXT[] NOT NULL DEFAULT '{}',
+    status VARCHAR(20) NOT NULL DEFAULT 'PENDING',
+    attempts INT NOT NULL DEFAULT 0,
+    next_attempt_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    last_error TEXT NULL,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    sent_at TIMESTAMP WITH TIME ZONE NULL
+);
+
+CREATE INDEX IF NOT EXISTS order_confirmation_outbox_pending_idx
+  ON order_confirmation_outbox(status, next_attempt_at, created_at);
+
 INSERT INTO product_inventory (product_id, available_stock) VALUES
 ('e0000000-0000-0000-0000-000000000001', 50)
 ON CONFLICT (product_id) DO NOTHING;
@@ -128,6 +144,32 @@ CREATE TABLE IF NOT EXISTS outbox_events (
 );
 
 CREATE INDEX IF NOT EXISTS idx_outbox_pending ON outbox_events(status, created_at) WHERE status = 'PENDING';
+
+CREATE TABLE IF NOT EXISTS inventory_reservations (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    product_id UUID NOT NULL,
+    shop_id UUID NOT NULL,
+    order_id UUID NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+    quantity INT NOT NULL CHECK (quantity > 0),
+    status VARCHAR(20) NOT NULL DEFAULT 'PENDING',
+    reserved_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS inventory_reservations_order_status_idx
+  ON inventory_reservations(order_id, status);
+
+CREATE TABLE IF NOT EXISTS invoices (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    order_id UUID NOT NULL UNIQUE REFERENCES orders(id) ON DELETE CASCADE,
+    status VARCHAR(20) NOT NULL DEFAULT 'PENDING',
+    total_cents BIGINT NOT NULL,
+    buyer_id UUID NOT NULL,
+    seller_id UUID NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    paid_at TIMESTAMP WITH TIME ZONE NULL,
+    pdf_url TEXT NULL,
+    metadata JSONB NOT NULL DEFAULT '{}'::jsonb
+);
 
 -- 5. NOTIFICATION SERVICE DATABASE (In-App Inbox)
 \c ecommerce_notification_db;

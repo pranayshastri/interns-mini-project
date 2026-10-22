@@ -1,18 +1,184 @@
-'use client';
-import Link from 'next/link';
-import { BrandLogo } from '../../components/brand-logo';
-import { useCallback } from 'react';
-import { useApp } from '../../components/providers';
-import { Empty, ErrorState, Guard, Loading, useResource } from '../../components/feedback/states';
-import { money } from '../../lib/contracts';
-export function BillingPage() { return <Guard role="CUSTOMER"><Billing/></Guard>; }
-function Billing() {
-  const { adapter } = useApp(); const load = useCallback(() => adapter!.invoices(), [adapter]); const { data, error, loading, reload } = useResource(load, !!adapter);
-  return <><div className="page-title"><div><span className="eyebrow">ALL THE DETAILS, TOGETHER</span><h1>Billing & invoices</h1><p className="muted">Your issued invoices, organised by order and seller.</p></div></div>{loading ? <Loading/> : error ? <ErrorState error={error} retry={reload}/> : data?.length ? <div className="stack">{data.map(i => <Link className="order-row" key={i.id} href={`/billing/invoices/${encodeURIComponent(i.id)}`}><div><h3>{i.id}</h3><p className="muted">{i.seller} · {i.orderId}</p></div><span className="small muted">{new Date(i.issuedAt).toLocaleDateString('en-IN')}</span><strong>{money(i.total)}</strong><span>→</span></Link>)}</div> : <Empty title="Your invoices are being prepared" href="/orders" action="View your orders">Issued invoices will appear here when they’re available. One order may have separate invoices from different sellers.</Empty>}</>;
+"use client";
+import Link from "next/link";
+import { BrandLogo } from "../../components/brand-logo";
+import { useCallback } from "react";
+import { useApp } from "../../components/providers";
+import {
+  Empty,
+  ErrorState,
+  Guard,
+  Loading,
+  useResource,
+} from "../../components/feedback/states";
+import { money, shortId } from "../../lib/contracts";
+export function BillingPage() {
+  return (
+    <Guard role="CUSTOMER">
+      <Billing />
+    </Guard>
+  );
 }
-export function InvoicePage({ id }: { id: string }) { return <Guard role="CUSTOMER"><InvoiceDetail id={id}/></Guard>; }
+function Billing() {
+  const { adapter } = useApp();
+  const load = useCallback(() => adapter!.invoices(), [adapter]);
+  const { data, error, loading, reload } = useResource(load, !!adapter);
+  return (
+    <>
+      <div className="page-title">
+        <div>
+          <span className="eyebrow">ALL THE DETAILS, TOGETHER</span>
+          <h1>Billing & invoices</h1>
+          <p className="muted">
+            Your issued invoices, organised by order and seller.
+          </p>
+        </div>
+      </div>
+      {loading ? (
+        <Loading />
+      ) : error ? (
+        <ErrorState error={error} retry={reload} />
+      ) : data?.length ? (
+        <div className="stack">
+          {data.map((i) => (
+            <Link
+              className="order-row"
+              key={i.id}
+              href={`/billing/invoices/${encodeURIComponent(i.id)}`}
+            >
+              <div>
+                <h3>Invoice #{shortId(i.id)}</h3>
+                <p className="muted">
+                  Order #{shortId(i.orderId)} · Issued{" "}
+                  {new Date(i.issuedAt).toLocaleDateString("en-IN")}
+                </p>
+              </div>
+              <span className="badge green">
+                {i.paymentReference ? "confirmed" : "issued"}
+              </span>
+              <strong>{money(i.total)}</strong>
+              <span>→</span>
+            </Link>
+          ))}
+        </div>
+      ) : (
+        <Empty
+          title="Your invoices are being prepared"
+          href="/orders"
+          action="View your orders"
+        >
+          Issued invoices will appear here when they’re available. One order may
+          have separate invoices from different sellers.
+        </Empty>
+      )}
+    </>
+  );
+}
+export function InvoicePage({ id }: { id: string }) {
+  return (
+    <Guard role="CUSTOMER">
+      <InvoiceDetail id={id} />
+    </Guard>
+  );
+}
 function InvoiceDetail({ id }: { id: string }) {
-  const { adapter } = useApp(); const load = useCallback(() => adapter!.invoice(id), [adapter, id]); const { data: i, error, loading, reload } = useResource(load, !!adapter);
-  if (loading) return <Loading/>; if (error) return <ErrorState error={error} retry={reload}/>; if (!i) return <Empty title="Invoice is being prepared or unavailable" href="/billing" action="Back to billing">Only issued invoices for your account are shown here.</Empty>;
-  return <><div className="page-title no-print"><Link className="text-link" href="/billing">← Billing & invoices</Link><button className="button secondary" onClick={() => window.print()}>Print invoice</button></div><article className="panel invoice"><header className="invoice-header"><div><BrandLogo /><p className="muted small">Invoice</p></div><div><h2>{i.id}</h2><p className="small muted">Issued {new Date(i.issuedAt).toLocaleDateString('en-IN')}</p></div></header><div className="invoice-addresses"><div><span className="eyebrow">FROM</span><h3 style={{ marginTop: 8 }}>{i.seller}</h3><p className="muted small"></p></div><div><span className="eyebrow">BILL TO / SHIP TO</span><p style={{ marginTop: 8 }}>{i.billingAddress}</p></div></div><p className="small">Order reference: <Link className="text-link" href={`/orders/${i.orderId}`}>{i.orderId}</Link></p><div className="table-scroll" role="region" aria-label="Invoice items" tabIndex={0}><table><thead><tr><th>Item</th><th>Quantity</th><th>Unit price</th><th>Amount</th></tr></thead><tbody>{i.items.map(line => <tr key={line.productId}><td>{line.name || line.productId}</td><td>{line.quantity}</td><td>{money(line.unitPriceCents)}</td><td>{money(line.quantity * line.unitPriceCents)}</td></tr>)}</tbody></table></div><div className="invoice-totals"><div className="summary-line total"><strong>Invoice total ({i.currency})</strong><strong>{money(i.total)}</strong></div><p className="small muted">Payment reference: {i.paymentReference}</p></div><hr/><p className="small muted">Amounts reflect the issued invoice record.</p></article></>;
+  const { adapter } = useApp();
+  const load = useCallback(() => adapter!.invoice(id), [adapter, id]);
+  const { data: i, error, loading, reload } = useResource(load, !!adapter);
+  if (loading) return <Loading />;
+  if (error) return <ErrorState error={error} retry={reload} />;
+  if (!i)
+    return (
+      <Empty
+        title="Invoice is being prepared or unavailable"
+        href="/billing"
+        action="Back to billing"
+      >
+        Only issued invoices for your account are shown here.
+      </Empty>
+    );
+  return (
+    <>
+      <div className="page-title no-print">
+        <Link className="text-link" href="/billing">
+          ← Billing & invoices
+        </Link>
+        <button className="button secondary" onClick={() => window.print()}>
+          Print invoice
+        </button>
+      </div>
+      <article className="panel invoice">
+        <header className="invoice-header">
+          <div>
+            <BrandLogo />
+            <p className="muted small">Invoice #{shortId(i.id)}</p>
+          </div>
+          <div>
+            <h2>{money(i.total)}</h2>
+            <p className="small muted">
+              Issued {new Date(i.issuedAt).toLocaleDateString("en-IN")}
+            </p>
+          </div>
+        </header>
+        <div className="invoice-addresses">
+          <div>
+            <span className="eyebrow">FROM</span>
+            <h3 style={{ marginTop: 8 }}>RoboNest seller</h3>
+            <p className="muted small">Seller reference #{shortId(i.seller)}</p>
+          </div>
+          <div>
+            <span className="eyebrow">BILL TO / SHIP TO</span>
+            <p style={{ marginTop: 8 }}>
+              {i.billingAddress || "Address on order"}
+            </p>
+          </div>
+        </div>
+        <p className="small">
+          Order reference:{" "}
+          <Link className="text-link" href={`/orders/${i.orderId}`}>
+            #{shortId(i.orderId)}
+          </Link>
+        </p>
+        <div
+          className="table-scroll"
+          role="region"
+          aria-label="Invoice items"
+          tabIndex={0}
+        >
+          <table>
+            <thead>
+              <tr>
+                <th>Item</th>
+                <th>Quantity</th>
+                <th>Unit price</th>
+                <th>Amount</th>
+              </tr>
+            </thead>
+            <tbody>
+              {i.items.map((line) => (
+                <tr key={line.productId}>
+                  <td>{line.name || `Product #${shortId(line.productId)}`}</td>
+                  <td>{line.quantity}</td>
+                  <td>{money(line.unitPriceCents)}</td>
+                  <td>{money(line.quantity * line.unitPriceCents)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div className="invoice-totals">
+          <div className="summary-line total">
+            <strong>Invoice total ({i.currency})</strong>
+            <strong>{money(i.total)}</strong>
+          </div>
+          <p className="small muted">
+            Payment reference: #{shortId(i.paymentReference)}
+          </p>
+        </div>
+        <hr />
+        <p className="small muted">
+          Amounts reflect the issued invoice record.
+        </p>
+      </article>
+    </>
+  );
 }
