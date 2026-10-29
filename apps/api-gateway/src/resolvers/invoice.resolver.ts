@@ -76,8 +76,10 @@ function toGraphQLInvoice(raw: any) {
       raw.items?.map((item: any) => ({
         productId: item.product_id,
         shopId: item.shop_id,
+        name: item.name,
         quantity: item.quantity,
         unitPriceCents: Number(item.unit_price_cents),
+        imageUrl: item.image_url,
       })) || [],
     shippingAddress: raw.shipping_address || "",
   };

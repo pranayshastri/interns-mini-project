@@ -29,7 +29,7 @@ export default function RootLayout({
     auth: process.env.ROBONEST_AUTH_ENABLED !== "false",
     capabilities: (
       process.env.ROBONEST_VERIFIED_CAPABILITIES ||
-      "products,product,stock,orders,order,createOrder,createProduct,myProducts,notifications,invoices"
+      "products,product,stock,orders,order,createOrder,createProduct,updateProduct,updateStock,myProducts,notifications,invoices"
     )
       .split(",")
       .filter(Boolean),

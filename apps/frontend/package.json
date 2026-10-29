@@ -4,7 +4,7 @@
   "type": "module",
   "private": true,
   "scripts": {
-    "dev": "ROBONEST_VERIFIED_CAPABILITIES=products,product,stock,orders,order,createOrder,createProduct,myProducts,notifications,invoices next dev --port 3000",
+    "dev": "ROBONEST_VERIFIED_CAPABILITIES=products,product,stock,orders,order,createOrder,createProduct,updateProduct,updateStock,myProducts,notifications,invoices next dev --port 3000",
     "build": "next build",
     "start": "next start",
     "lint": "eslint --max-warnings 0",

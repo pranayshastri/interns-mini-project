@@ -155,14 +155,82 @@ export class CatalogService {
     }));
   }
 
+  async updateProduct(data: {
+    product_id: string;
+    name?: string;
+    description?: string;
+    price_cents?: number | string;
+  }) {
+    if (
+      typeof data.product_id !== 'string' ||
+      !validUuid(data.product_id.trim())
+    ) {
+      throw new BadRequestException('A valid product UUID is required');
+    }
+
+    const product = await this.prisma.product.findUnique({
+      where: { id: data.product_id.trim() },
+    });
+
+    if (!product) {
+      throw new NotFoundException('Product not found');
+    }
+
+    const updateData: any = {};
+
+    if (typeof data.name === 'string' && data.name.trim()) {
+      if (data.name.trim().length > 255) {
+        throw new BadRequestException('Name must be at most 255 characters');
+      }
+      updateData.name = data.name.trim();
+    }
+
+    if (typeof data.description === 'string' && data.description.trim()) {
+      if (data.description.trim().length > 5000) {
+        throw new BadRequestException('Description must be at most 5000 characters');
+      }
+      updateData.description = data.description.trim();
+    }
+
+    if (data.price_cents !== undefined) {
+      const rawPrice = String(data.price_cents);
+      if (!/^[0-9]+$/.test(rawPrice)) {
+        throw new BadRequestException('price_cents must be a non-negative integer');
+      }
+      let price: bigint;
+      try {
+        price = BigInt(rawPrice);
+      } catch {
+        throw new BadRequestException('price_cents must be a non-negative integer');
+      }
+      if (price < 0n || price > MAX_PRICE_CENTS) {
+        throw new BadRequestException('price_cents is outside the supported range');
+      }
+      updateData.priceCents = price;
+    }
+
+    const updated = await this.prisma.product.update({
+      where: { id: data.product_id.trim() },
+      data: updateData,
+    });
+
+    await this.valkey.invalidateProductsCache();
+
+    return {
+      id: updated.id,
+      shop_id: updated.shopId,
+      name: updated.name,
+      description: updated.description,
+      price_cents: updated.priceCents.toString(),
+      available_stock: 0,
+    };
+  }
   async getProduct(productId: string) {
     if (
       typeof productId !== 'string' ||
       !validUuid(productId.trim())
     ) {
-      throw new BadRequestException(
-        'A valid product UUID is required',
-      );
+      throw new BadRequestException('A valid product UUID is required');
     }
 
     const product = await this.prisma.product.findUnique({

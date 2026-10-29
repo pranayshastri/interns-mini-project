@@ -82,6 +82,20 @@ export class CatalogController {
     }
   }
 
+  @GrpcMethod('CatalogService', 'UpdateProduct')
+  async updateProduct(data: {
+    product_id: string;
+    name?: string;
+    description?: string;
+    price_cents?: number | string;
+  }) {
+    try {
+      return await this.catalogService.updateProduct(data);
+    } catch (error) {
+      return this.mapGrpcError(error, 'UpdateProduct');
+    }
+  }
+
   @GrpcMethod('CatalogService', 'GetProduct')
   async getProduct(data: { product_id: string }) {
     try {
