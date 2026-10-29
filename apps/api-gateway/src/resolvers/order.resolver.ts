@@ -12,6 +12,7 @@ export const orderTypeDefs = `
     quantity: Int!
     unitPriceCents: Int!
     name: String
+    imageUrl: String
   }
 
   type Order {
@@ -93,6 +94,7 @@ function toGraphQLOrder(order: any) {
         quantity: item.quantity,
         unitPriceCents: Number(item.unit_price_cents ?? item.unitPriceCents),
         name: item.name,
+        imageUrl: item.image_url ?? item.imageUrl,
       })) || [],
     shippingAddress: order.shipping_address,
   };

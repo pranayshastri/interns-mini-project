@@ -8,8 +8,9 @@ import type {
 } from "./contracts";
 
 export const productFields =
-  "id shopId name description priceCents availableStock";
+  "id shopId name description priceCents availableStock imageUrl";
 export const orderFields = "id customerId status totalAmountCents createdAt";
+export const orderItemFields = "productId shopId quantity unitPriceCents name imageUrl";
 export const notificationFields = "id title body type read readAt createdAt";
 // Only baseline operations have a live implementation. Proposed contracts fail closed.
 export function liveAdapter(config: Config): CommerceAdapter {
@@ -70,8 +71,24 @@ export function liveAdapter(config: Config): CommerceAdapter {
         )
       ).createProduct;
     },
-    updateProduct: unavailable,
-    updateStock: unavailable,
+    async updateProduct(id, input) {
+      requireCapability("updateProduct");
+      return (
+        await accountRequest<{ updateProduct: Product }>(
+          `mutation($id:ID!,$name:String,$description:String,$priceCents:Int){updateProduct(id:$id,name:$name,description:$description,priceCents:$priceCents){${productFields}}}`,
+          { id, ...input },
+        )
+      ).updateProduct;
+    },
+    async updateStock(id, delta) {
+      requireCapability("updateStock");
+      return (
+        await accountRequest<{ updateStock: Product }>(
+          `mutation($productId:ID!,$delta:Int!){updateStock(productId:$productId,delta:$delta){${productFields}}}`,
+          { productId: id, delta },
+        )
+      ).updateStock;
+    },
     async orders(seller = false) {
       requireCapability("orders");
       return (

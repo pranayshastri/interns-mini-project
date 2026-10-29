@@ -364,7 +364,7 @@ async function main() {
       ...env,
       ROBONEST_AUTH_ENABLED: "true",
       ROBONEST_VERIFIED_CAPABILITIES: commerce
-        ? "products,product,stock,orders,order,createOrder,createProduct,myProducts,notifications,invoices"
+        ? "products,product,stock,orders,order,createOrder,createProduct,updateProduct,updateStock,myProducts,notifications,invoices"
         : "",
       API_GATEWAY_URL: `http://127.0.0.1:${ports.gateway}`,
       NEXT_DIST_DIR: `.next-auth-local-${ports.frontend}`,

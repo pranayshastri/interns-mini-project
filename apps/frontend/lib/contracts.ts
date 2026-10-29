@@ -27,7 +27,7 @@ export type Product = {
   description: string;
   priceCents: number;
   availableStock: number;
-  image?: string;
+  imageUrl?: string;
   category?: string;
   pack?: string;
   seller?: string;

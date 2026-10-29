@@ -68,15 +68,31 @@ export class CatalogMutationResolver {
       limit,
     });
 
-    return result.products.map((product: any) => ({
+    const products = result.products.map((product: any) => ({
       id: product.id,
       shopId: product.shop_id,
       name: product.name,
       description: product.description,
       priceCents: Number(product.price_cents),
+      imageUrl: product.image_url || null,
     }));
-  }
 
+    // Fetch available stock from inventory for each product
+    const stockResults = await Promise.all(
+      products.map(async (product: any) => {
+        try {
+          const stock = await this.grpc.call('inventory', 'getStock', {
+            product_id: product.id,
+          });
+          return { ...product, availableStock: stock.available_stock ?? 0 };
+        } catch {
+          return { ...product, availableStock: 0 };
+        }
+      }),
+    );
+
+    return stockResults;
+  }
   @Mutation('createProduct')
   async createProduct(
     @Args('name') name: string,
@@ -142,6 +158,142 @@ export class CatalogMutationResolver {
       name: product.name,
       description: product.description,
       priceCents: Number(product.price_cents),
+      availableStock: initialStock,
+      imageUrl: product.image_url || null,
+    };
+  }
+
+
+
+  @Mutation('updateProduct')
+  async updateProduct(
+    @Args('id') id: string,
+    @Args('name') name: string | undefined,
+    @Args('description') description: string | undefined,
+    @Args('priceCents') priceCents: number | undefined,
+    @Context() context: any,
+  ) {
+    const token = readSessionToken(context.req);
+    const user = await this.auth.call('getProfile', { token });
+
+    if (user.role !== 'SHOPKEEPER' || user.status !== 'ACTIVE') {
+      throw new GraphQLError('Only active sellers can update products.', {
+        extensions: { code: 'FORBIDDEN' },
+      });
+    }
+
+    const shopId =
+      typeof user.shop_id === 'string' ? user.shop_id.trim() : '';
+
+    if (!shopId) {
+      throw new GraphQLError('Your seller account has no shop assigned.', {
+        extensions: { code: 'FORBIDDEN' },
+      });
+    }
+
+    // Verify the product belongs to this shop
+    const existingProduct = await this.grpc.call('catalog', 'getProduct', {
+      product_id: id,
+    });
+
+    if (existingProduct.shop_id !== shopId) {
+      throw new GraphQLError('You can only update your own products.', {
+        extensions: { code: 'FORBIDDEN' },
+      });
+    }
+
+    if (
+      name !== undefined &&
+      (typeof name !== 'string' || !name.trim() || name.trim().length > 255)
+    ) {
+      throw badInput('Name must be a non-empty string within 255 characters.');
+    }
+
+    if (
+      description !== undefined &&
+      (typeof description !== 'string' ||
+        !description.trim() ||
+        description.trim().length > 5000)
+    ) {
+      throw badInput('Description must be a non-empty string within 5000 characters.');
+    }
+
+    if (
+      priceCents !== undefined &&
+      (!Number.isInteger(priceCents) || priceCents < 0)
+    ) {
+      throw badInput('priceCents must be a non-negative integer.');
+    }
+
+    const product = await this.grpc.call('catalog', 'updateProduct', {
+      product_id: id,
+      name: name?.trim(),
+      description: description?.trim(),
+      price_cents: priceCents !== undefined ? String(priceCents) : undefined,
+    });
+
+    return {
+      id: product.id,
+      shopId: product.shop_id,
+      name: product.name,
+      description: product.description,
+      priceCents: Number(product.price_cents),
+      availableStock: product.available_stock ?? 0,
+      imageUrl: product.image_url || null,
+    };
+  }
+
+  @Mutation('updateStock')
+  async updateStock(
+    @Args('productId') productId: string,
+    @Args('delta') delta: number,
+    @Context() context: any,
+  ) {
+    const token = readSessionToken(context.req);
+    const user = await this.auth.call('getProfile', { token });
+
+    if (user.role !== 'SHOPKEEPER' && user.role !== 'ADMIN') {
+      throw new GraphQLError('Only sellers and admins can update stock.', {
+        extensions: { code: 'FORBIDDEN' },
+      });
+    }
+
+    if (!Number.isInteger(delta)) {
+      throw badInput('Delta must be an integer.');
+    }
+
+    // Verify product ownership for shopkeepers
+    if (user.role === 'SHOPKEEPER') {
+      const shopId =
+        typeof user.shop_id === 'string' ? user.shop_id.trim() : '';
+      const product = await this.grpc.call('catalog', 'getProduct', {
+        product_id: productId,
+      });
+      if (product.shop_id !== shopId) {
+        throw new GraphQLError('You can only update stock for your own products.', {
+          extensions: { code: 'FORBIDDEN' },
+        });
+      }
+    }
+
+    const result = await this.grpc.call('inventory', 'updateStock', {
+      product_id: productId,
+      delta,
+    });
+
+    // Fetch product details for response
+    const product = await this.grpc.call('catalog', 'getProduct', {
+      product_id: productId,
+    });
+
+    return {
+      id: product.id,
+      shopId: product.shop_id,
+      name: product.name,
+      description: product.description,
+      priceCents: Number(product.price_cents),
+      availableStock: result.available_stock ?? 0,
+      imageUrl: product.image_url || null,
     };
   }
 }

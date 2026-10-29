@@ -52,6 +52,53 @@ export class InventoryService {
     }
   }
 
+  async updateStock(productId: string, delta: number): Promise<{
+    productId: string;
+    availableStock: number;
+  }> {
+    if (!Number.isSafeInteger(delta)) {
+      throw new RpcException({
+        code: 3,
+        message: 'Delta must be a safe integer',
+      });
+    }
+
+    const inventory = await this.prisma.productInventory.findUnique({
+      where: { productId },
+    });
+
+    if (!inventory) {
+      // Create inventory record if it doesn't exist
+      const newInventory = await this.prisma.productInventory.create({
+        data: {
+          productId,
+          availableStock: Math.max(0, delta),
+        },
+      });
+      return {
+        productId,
+        availableStock: Number(newInventory.availableStock),
+      };
+    }
+
+    const newStock = Number(inventory.availableStock) + delta;
+    if (newStock < 0) {
+      throw new RpcException({
+        code: 9,
+        message: 'Insufficient stock for this adjustment',
+      });
+    }
+
+    const updated = await this.prisma.productInventory.update({
+      where: { productId },
+      data: { availableStock: newStock },
+    });
+
+    return {
+      productId,
+      availableStock: Number(updated.availableStock),
+    };
+  }
   async reserveStockInTransaction(
     tx: Prisma.TransactionClient,
     productId: string,
